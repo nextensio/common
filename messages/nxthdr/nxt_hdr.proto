@@ -1,0 +1,76 @@
+syntax = "proto3";
+package nxthdr;
+option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
+
+
+// agent: true if its an agent, false for connector. 
+// userid: username of the agent/connector
+// uuid: a unique identifier for the agent, if the same userid has multiple devices
+//       usually just a uuid.UUID suffices to be unique
+// services: the service names advertised by this agent/connector
+message NxtOnboard {
+    bool agent = 1;
+    string userid = 2;
+    string uuid = 3;
+    string accessToken = 4;
+    repeated string services = 5; 
+}
+
+// source, dest, sport, dport, proto: standard five tuple associated with any flow. Any/all of these
+// can be empty based on whether that value is needed for that kind of flow etc..
+//
+// sourceAgent: the service name of the source agent/connector that can be used in the return direction
+// to get back to the same agent/connector
+//
+// destAgent: the service name of the dest agent/connector. This field may (or may not) be the same as 
+// the "dest" field. For example if the dest field is a private service like kismis.org, the destAgent
+// will be the same as kismis.org. But if the dest field is say google.com, then the destAgent can be
+// set to say default-internet. In other words, destAgent gives the sender (agent/connector) flexibility
+// to either say "route to whoever provides flow.dest" by setting flow.destAgent same as flow.dest OR to
+// say "route exactly to this particular service" by setting a specific value for flow.destAgent different
+// from flow.dest. The cluster always routes based on flow.destAgent field
+//
+// originAgent: This stores the information about which agent originated the flow. The source and dest of
+// the flow can keep changing, but the originAgent will never change. The agents/connectors are expected
+// to preserve this information and carry it across in every header.
+//
+// type: three types of nextensio flows - raw l3 packets, tcp/udp terminated l4, or http proxy packets
+//
+// key, value: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
+message NxtFlow {
+    string source = 1;
+    string dest = 2;
+    uint32 sport = 3;
+    uint32 dport = 4;
+    uint32 proto = 5;
+    string sourceAgent = 6;
+    string destAgent = 7;
+    string originAgent = 8;
+    enum FLOW_TYPE {
+        L4 = 0;
+        PROXY = 1;
+        L3 = 2;
+    }
+    FLOW_TYPE type = 9;
+    string usrattr = 10;
+}
+
+// The streamid and streamop is used only in cases where nextensio itself
+// is providing stream operations on top of a bare transport like tcp/websocket.
+// But if the transport is like an http2/rsocket/quic etc.., then these fields
+// are just zero and hence wont occupy space on the wire (zero values are not
+// sent on wire by protobuf)
+// An Nxt message can be either an onboarding message or data for a user flow
+message NxtHdr {
+    uint64 streamid = 1;
+    enum STREAM_OP {
+        NOOP = 0;
+        CLOSE = 1;
+        FLOW_CONTROL = 2;
+    }
+    STREAM_OP streamop = 2;
+    oneof hdr {
+        NxtOnboard onboard = 3;
+        NxtFlow flow = 4;
+    }
+}
