@@ -7,6 +7,7 @@ option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 // userid: username of the agent/connector
 // uuid: a unique identifier for the agent, if the same userid has multiple devices
 //       usually just a uuid.UUID suffices to be unique
+// accessToken: The token provided to the agent/connector by the identity provider
 // services: the service names advertised by this agent/connector
 message NxtOnboard {
     bool agent = 1;
@@ -36,7 +37,7 @@ message NxtOnboard {
 //
 // type: three types of nextensio flows - raw l3 packets, tcp/udp terminated l4, or http proxy packets
 //
-// key, value: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
+// usrattr: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
 message NxtFlow {
     string source = 1;
     string dest = 2;
