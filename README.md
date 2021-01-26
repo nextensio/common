@@ -11,14 +11,11 @@ To be able to import a private repo into your code, do the below.
 
 1. Add the following to /home/<you>/.gitconfig 
 
-```
 [url "git@gitlab.com:"]
     insteadOf = https://gitlab.com/
-```
 
 2. Add this to your .bashrc and ensure all your shells have this environment variable set before you "go build"
 
-```
 export GOPRIVATE="gitlab.com"
 export GO111MODULE="on"
 
@@ -28,7 +25,6 @@ by saying go get gitlab.com/nextensio/common@your-branch-name for example, and y
 (you will see the version number printed by the output of go get) in the go.mod file of your project by specifying
 the line "gitlab.com/nextensio/common v0.0.0-20210101210846-22c3b1d85600" for example, to ask for that specific
 version of common in your project
-```
 
 3. When this repository is used in other projects to make a docker image of that project, the docker build of 
 that project might try to do a go get from the Dockerfile - and that command usually runs from within a docker
