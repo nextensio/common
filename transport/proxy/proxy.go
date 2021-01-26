@@ -79,7 +79,6 @@ func (p *Proxy) deviceToProxy() {
 			packetBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				Data: vv,
 			})
-			packetBuf.RXTransportChecksumValidated = true
 			p.linkEP.InjectInbound(pn, packetBuf)
 		}
 	}
