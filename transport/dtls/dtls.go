@@ -123,10 +123,9 @@ func (d *Dtls) IsClosed() bool {
 	return d.closed
 }
 
-// DTLS cannot be used for multiplexing streams as of now, no new stream is created here,
-// we just return the existing transport
+// DTLS cannot be used for multiplexing streams as of now
 func (d *Dtls) NewStream(hdr http.Header) common.Transport {
-	return d
+	panic("dtls does not support new stream")
 }
 
 func (d *Dtls) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
