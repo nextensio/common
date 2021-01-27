@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"log"
 	"net"
@@ -8,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bradleyfalzon/tlsx"
 	"github.com/google/uuid"
 	"gitlab.com/nextensio/common"
 	"gitlab.com/nextensio/common/messages/nxthdr"
@@ -25,20 +28,67 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+const (
+	TLS_HDRLEN        = 5
+	TCP_PARSE_SZ      = 2 * common.MAXBUF
+	TCP_PARSE_TIMEOUT = 5 * time.Millisecond // 5 msecs to get all the http request header / tls client hello
+)
+
+type tls struct {
+	notTls bool
+}
+
+type text struct {
+	notHttp bool
+}
+
 // Proxy provides transport where it terminates tcp/udp streams coming
 // on an interface (device) and provides the terminated data to the
 // reader. And similarly the writer can write data which will get dressed
 // up with tcp/udp headers etc.. and get sent over the device
 type Proxy struct {
-	deviceIP net.IP
-	device   common.Transport
-	linkEP   *channel.Endpoint
-	tcp      *gonet.TCPConn
-	tr       *tcp.ForwarderRequest
-	udp      *gonet.UDPConn
-	closed   bool
+	deviceIP  net.IP
+	device    common.Transport
+	linkEP    *channel.Endpoint
+	tcp       *gonet.TCPConn
+	tcpParse  []byte
+	tcpParsed chan struct{}
+	tcpLen    int
+	tls       tls
+	http      text
+	tr        *tcp.ForwarderRequest
+	udp       *gonet.UDPConn
+	service   string
+	closed    bool
 }
 
+// These are tcp/udp packets coming in on a device/transport (like ethernet)
+// which we want the gvisor stack to terminate using its tcp/ip stack. So we
+// send them over to gvisor
+func (p *Proxy) deviceToProxy() {
+	// TODO: ipv6 support some day
+	pn := header.IPv4ProtocolNumber
+	for {
+		_, buf, err := p.device.Read()
+		if err != nil {
+			log.Println("Device read error")
+			p.Close()
+			return
+		}
+		for _, b := range buf {
+			vv := buffer.NewViewFromBytes(b).ToVectorisedView()
+			packetBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Data: vv,
+			})
+			p.linkEP.InjectInbound(pn, packetBuf)
+		}
+	}
+}
+
+// These are tcp/udp packets from the govisor tcp/ip stack that we need to send
+// out on some other device/transport (like an ethernet interface. These packets
+// can be gvisor generated packets like the tcp acks and stuff or app generated
+// data like the tcp payload
 func (p *Proxy) proxyToDevice() {
 	for {
 		packetInfo, ok := p.linkEP.ReadContext(context.Background())
@@ -64,30 +114,14 @@ func (p *Proxy) proxyToDevice() {
 	}
 }
 
-func (p *Proxy) deviceToProxy() {
-	// TODO: ipv6 support some day
-	pn := header.IPv4ProtocolNumber
-	for {
-		_, buf, err := p.device.Read()
-		if err != nil {
-			log.Println("Device read error")
-			p.Close()
-			return
-		}
-		for _, b := range buf {
-			vv := buffer.NewViewFromBytes(b).ToVectorisedView()
-			packetBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: vv,
-			})
-			p.linkEP.InjectInbound(pn, packetBuf)
-		}
-	}
-}
-
 func NewListener(device common.Transport, deviceIP net.IP) *Proxy {
 	return &Proxy{device: device, deviceIP: deviceIP}
 }
 
+// Listen on a device for incoming tcp/udp streams, terminate them and create
+// an individual transport for each of those streams. A read() on that transport
+// will get the tcp/udp payload (and not internal tcp stuff like acks) and write
+// on that transport will be the tcp/udp payload that gets written
 func (p *Proxy) Listen(c chan common.NxtStream) {
 	uuid := uuid.New()
 	ipstack := stack.New(stack.Options{
@@ -134,7 +168,10 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		}
 		r.Complete(false)
 		tcp := gonet.NewTCPConn(&wq, ep)
-		proxy := &Proxy{tcp: tcp, tr: r}
+		parse := make([]byte, TCP_PARSE_SZ)
+		parsed := make(chan struct{})
+		proxy := &Proxy{tcp: tcp, tr: r, tcpParse: parse, tcpParsed: parsed, tcpLen: 0}
+		go tcpParse(proxy)
 		c <- common.NxtStream{Parent: uuid, Stream: proxy}
 	})
 	ipstack.SetTransportProtocolHandler(tcp.ProtocolNumber, fwdTcp.HandlePacket)
@@ -182,13 +219,13 @@ func (p *Proxy) NewStream(hdr http.Header) common.Transport {
 func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	for _, b := range buf {
 		if p.tcp != nil {
-			l, err := p.tcp.Write(b)
-			if err != nil || l < len(b) {
+			_, err := p.tcp.Write(b)
+			if err != nil {
 				return common.Err(common.CONNECTION_ERR, err)
 			}
 		} else if p.udp != nil {
-			l, err := p.udp.Write(b)
-			if err != nil || l < len(b) {
+			_, err := p.udp.Write(b)
+			if err != nil {
 				return common.Err(common.CONNECTION_ERR, err)
 			}
 		} else {
@@ -198,7 +235,157 @@ func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	return nil
 }
 
+func nlcrnl(v []byte) bool {
+	if v[0] == '\n' && v[1] == '\r' && v[2] == '\n' {
+		return true
+	}
+	return false
+}
+
+func parseHTTP(p *Proxy, prev int) bool {
+	if p.http.notHttp {
+		return false
+	}
+	// Look for the sequence '\n\r\n' - ie a CRLF on a line by itself
+	// A brute force check here without maintaining any state, for every
+	// set of three bytes, check if they are \n\r\n
+	found := false
+	end := 0
+	for i := prev; i < p.tcpLen; i++ {
+		if i-2 >= 0 {
+			if nlcrnl(p.tcpParse[i-2 : i+1]) {
+				found = true
+				end = i + 1
+				break
+			}
+		}
+		if i-1 >= 0 && i+1 < p.tcpLen {
+			if nlcrnl(p.tcpParse[i-1 : i+2]) {
+				found = true
+				end = i + 2
+				break
+			}
+		}
+		if i+2 < p.tcpLen {
+			if nlcrnl(p.tcpParse[i : i+3]) {
+				found = true
+				end = i + 3
+				break
+			}
+		}
+	}
+	if found {
+		reader := bufio.NewReader(bytes.NewReader(p.tcpParse[0:end]))
+		req, err := http.ReadRequest(reader)
+		if err != nil {
+			p.http.notHttp = true
+			return false
+		}
+		if req.Proto != "HTTP/1.1" {
+			p.http.notHttp = true
+			return false
+		}
+		valid := false
+		methods := []string{"GET", "PUT", "POST", "HEAD", "DELETE", "PATCH", "OPTIONS"}
+		for _, m := range methods {
+			if req.Method == m {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			p.http.notHttp = true
+			return false
+		}
+		if req.Host == "" {
+			p.http.notHttp = true
+			return false
+		}
+		p.service = req.Host
+	}
+
+	return true
+}
+
+func parseTLS(p *Proxy) bool {
+	if p.tls.notTls {
+		return false
+	}
+	// The first 5 bytes is what identifies TLS
+	if p.tcpLen < TLS_HDRLEN {
+		return false
+	}
+	t := int(p.tcpParse[0])
+	maj := int(p.tcpParse[1])
+	min := int(p.tcpParse[2])
+	l := (int(p.tcpParse[3]) << 8) | int(p.tcpParse[4])
+	// Check if type is client hello (0x16)
+	// Check if version is 0300 or 0301 or 0302
+	// Check if hello fits in one buffer. Again, like we discussed in tcpParse(), if
+	// we come across esoteric hellos that are huge, we need to come back and modify this check
+	if t != 0x16 || maj != 3 || ((min != 0) && (min != 1) && (min != 2)) || (l > TCP_PARSE_SZ-TLS_HDRLEN) {
+		p.tls.notTls = true
+		return false
+	}
+	// Ok so we know its tls client hello, now we are just waiting to read all the hello bytes
+	if p.tcpLen != TLS_HDRLEN+l {
+		return false
+	}
+
+	var hello = tlsx.ClientHello{}
+	err := hello.Unmarshall(p.tcpParse[0:p.tcpLen])
+	if err != nil {
+		p.tls.notTls = true
+		return false
+	}
+	// The TLS SNI is our service name
+	p.service = hello.SNI
+
+	return true
+}
+
+func tcpParse(p *Proxy) {
+	// Cant wait for ever to decide if its plain text http or if its tls SNI
+	p.SetReadDeadline(time.Now().Add(TCP_PARSE_TIMEOUT))
+	for {
+		n, err := p.tcp.Read(p.tcpParse[p.tcpLen:])
+		prev := p.tcpLen
+		p.tcpLen += n
+		if parseTLS(p) || parseHTTP(p, prev) {
+			break
+		}
+		if err != nil {
+			// timed out (or even channel closed), we fall back to just using the
+			// ip address as the service name
+			break
+		}
+		if p.tcpLen == len(p.tcpParse) {
+			// well, I am not sure if we can expect the client hello/http headers to
+			// fit in one TCP_PARSE_SZ buffer. If there are esoteric hellos that need
+			// more space, we will need to come back here and increase the size of
+			// the tcpParse buf allocated to the Proxy
+			break
+		}
+	}
+
+	// Cancel the timeouts
+	p.SetReadDeadline(time.Time{})
+	// Parsing activity completed (succesfully or unsuccesfully)
+	close(p.tcpParsed)
+}
+
 func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
+
+	// Wait till we have identified what the tcp stream is, basically we
+	// try to figure out if its TLS and if so get the SNI field, or if its
+	// plain http we get the host field
+	select {
+	case <-p.tcpParsed:
+	}
+
+	if p.tcpLen != 0 {
+		return nil, net.Buffers{p.tcpParse[0:p.tcpLen]}, nil
+	}
 	buf := make([]byte, common.MAXBUF)
 	if p.tcp != nil {
 		len, err := p.tcp.Read(buf)
