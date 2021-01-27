@@ -302,9 +302,10 @@ func parseHTTP(p *Proxy, prev int) bool {
 			return false
 		}
 		p.service = req.Host
+		return true
 	}
 
-	return true
+	return false
 }
 
 func parseTLS(p *Proxy) bool {
@@ -361,7 +362,7 @@ func tcpParse(p *Proxy) {
 		}
 		if p.tcpLen == len(p.tcpParse) {
 			// well, I am not sure if we can expect the client hello/http headers to
-			// fit in one TCP_PARSE_SZ buffer. If there are esoteric hellos that need
+			// fit in one TCP_PARSE_SZ buffer. If there are esoteric hellos/headers that need
 			// more space, we will need to come back here and increase the size of
 			// the tcpParse buf allocated to the Proxy
 			break
