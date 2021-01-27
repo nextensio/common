@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bradleyfalzon/tlsx"
 	"github.com/google/uuid"
+	"github.com/gopakumarce/tlsx"
 	"gitlab.com/nextensio/common"
 	"gitlab.com/nextensio/common/messages/nxthdr"
 	"gvisor.dev/gvisor/pkg/tcpip"
