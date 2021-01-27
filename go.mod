@@ -3,7 +3,6 @@ module gitlab.com/nextensio/common
 go 1.14
 
 require (
-	github.com/bradleyfalzon/tlsx v0.0.0-20170624122154-28fd0e59bac4
 	github.com/golang/protobuf v1.4.3
 	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.1.2
