@@ -77,6 +77,7 @@ type Proxy struct {
 	dport     uint16
 	service   string
 	closed    bool
+	hdr       *nxthdr.NxtHdr
 }
 
 // These are tcp/udp packets coming in on a device/transport (like ethernet)
@@ -133,6 +134,25 @@ func (p *Proxy) proxyToDevice() {
 
 func NewListener(device common.Transport, deviceIP net.IP) *Proxy {
 	return &Proxy{device: device, deviceIP: deviceIP}
+}
+
+func makeHdr(p *Proxy) *nxthdr.NxtHdr {
+	flow := nxthdr.NxtFlow{}
+	flow.Source = p.sip.String()
+	flow.Sport = uint32(p.sport)
+	flow.Dest = p.dip.String()
+	flow.Dport = uint32(p.dport)
+	flow.DestAgent = p.service
+	flow.Type = nxthdr.NxtFlow_L4
+	if p.tcp != nil {
+		flow.Proto = common.TCP
+	} else if p.udp != nil {
+		flow.Proto = common.UDP
+	}
+
+	hdr := nxthdr.NxtHdr{}
+	hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
+	return &hdr
 }
 
 // Listen on a device for incoming tcp/udp streams, terminate them and create
@@ -194,6 +214,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}
+		proxy.hdr = makeHdr(proxy)
 		go tcpParse(proxy)
 		c <- common.NxtStream{Parent: uuid, Stream: proxy}
 	})
@@ -406,25 +427,6 @@ func tcpParse(p *Proxy) {
 	close(p.tcpParsed)
 }
 
-func makeHdr(p *Proxy) *nxthdr.NxtHdr {
-	flow := nxthdr.NxtFlow{}
-	flow.Source = p.sip.String()
-	flow.Sport = uint32(p.sport)
-	flow.Dest = p.dip.String()
-	flow.Dport = uint32(p.dport)
-	flow.DestAgent = p.service
-	flow.Type = nxthdr.NxtFlow_L4
-	if p.tcp != nil {
-		flow.Proto = common.TCP
-	} else if p.udp != nil {
-		flow.Proto = common.UDP
-	}
-
-	hdr := nxthdr.NxtHdr{}
-	hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
-	return &hdr
-}
-
 func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 
 	// Wait till we have identified what the tcp stream is, basically we
@@ -436,7 +438,7 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	// We have some data buffered as part of the tcp parsing, return that first
 	// and read the next set of data in the next call to Read()
 	if p.tcpLen != 0 {
-		return makeHdr(p), net.Buffers{p.tcpParse[0:p.tcpLen]}, nil
+		return p.hdr, net.Buffers{p.tcpParse[0:p.tcpLen]}, nil
 	}
 
 	var err error
@@ -445,12 +447,12 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if p.tcp != nil {
 		n, err = p.tcp.Read(buf)
 		if err == nil {
-			return makeHdr(p), net.Buffers{buf[:n]}, nil
+			return p.hdr, net.Buffers{buf[:n]}, nil
 		}
 	} else if p.udp != nil {
 		n, err = p.udp.Read(buf)
 		if err == nil {
-			return makeHdr(p), net.Buffers{buf[:n]}, nil
+			return p.hdr, net.Buffers{buf[:n]}, nil
 		}
 	}
 	return nil, nil, common.Err(common.CONNECTION_ERR, err)

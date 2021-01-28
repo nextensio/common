@@ -21,10 +21,25 @@ type Proxy struct {
 	dest   string
 	dport  uint16
 	closed bool
+	hdr    *nxthdr.NxtHdr
 }
 
 func NewListener(port uint16) *Proxy {
 	return &Proxy{listen: port}
+}
+
+func makeHdr(p *Proxy) *nxthdr.NxtHdr {
+	flow := nxthdr.NxtFlow{}
+	flow.Source = p.src
+	flow.Sport = uint32(p.sport)
+	flow.Dest = p.dest
+	flow.Dport = uint32(p.dport)
+	flow.DestAgent = p.dest
+	flow.Type = nxthdr.NxtFlow_L4
+	flow.Proto = common.TCP
+	hdr := nxthdr.NxtHdr{}
+	hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
+	return &hdr
 }
 
 func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *http.Request) {
@@ -62,8 +77,8 @@ func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *htt
 		http.Error(w, s, http.StatusInternalServerError)
 		return
 	}
-
 	newP := Proxy{src: shost, sport: uint16(sport), dest: dhost, dport: uint16(dport), conn: conn}
+	newP.hdr = makeHdr(&newP)
 	c <- common.NxtStream{Parent: uuid.New(), Stream: &newP}
 }
 
@@ -120,27 +135,13 @@ func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	return nil
 }
 
-func makeHdr(p *Proxy) *nxthdr.NxtHdr {
-	flow := nxthdr.NxtFlow{}
-	flow.Source = p.src
-	flow.Sport = uint32(p.sport)
-	flow.Dest = p.dest
-	flow.Dport = uint32(p.dport)
-	flow.DestAgent = p.dest
-	flow.Type = nxthdr.NxtFlow_L4
-	flow.Proto = common.TCP
-	hdr := nxthdr.NxtHdr{}
-	hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
-	return &hdr
-}
-
 func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	buf := make([]byte, common.MAXBUF)
 	n, err := p.conn.Read(buf)
 	if err != nil {
 		return nil, nil, common.Err(common.CONNECTION_ERR, err)
 	}
-	return makeHdr(p), net.Buffers{buf[:n]}, nil
+	return p.hdr, net.Buffers{buf[:n]}, nil
 }
 
 func (p *Proxy) SetReadDeadline(t time.Time) *common.NxtError {
