@@ -297,14 +297,14 @@ func parseHTTP(p *Proxy, prev int) bool {
 			p.http.notHttp = true
 			return false
 		}
-		if req.Proto != "HTTP/1.1" {
+		if strings.ToUpper(req.Proto) != "HTTP/1.1" {
 			p.http.notHttp = true
 			return false
 		}
 		valid := false
-		methods := []string{"GET", "PUT", "POST", "HEAD", "DELETE", "PATCH", "OPTIONS"}
+		methods := []string{"GET", "PUT", "POST", "CONNECT", "HEAD", "DELETE", "PATCH", "OPTIONS"}
 		for _, m := range methods {
-			if req.Method == m {
+			if strings.ToUpper(req.Method) == m {
 				valid = true
 				break
 			}
