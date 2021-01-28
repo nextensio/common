@@ -104,13 +104,15 @@ func createICMPPacket(id uint16, seq uint16) *gopacket.Packet {
 
 // This assumes that the interface with the default route in the system will
 // get some packets once in a while, it reads a few packets just to ensure
-// reads are working fine
+// reads are working fine. And it sends some icmp packets on that interface
+// which we can checkout in tcpdump
 func TestReadWrite(t *testing.T) {
 	mainCtx := context.Background()
 	intf, nhop := defaultIntf()
 	if nhop == nil {
 		panic("Cannot find default interface")
 	}
+	fmt.Println("Testing on interface", intf)
 	e := NewClient(mainCtx, intf, nhop)
 	c := make(chan common.NxtStream)
 	e.Dial(c)

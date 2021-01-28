@@ -214,7 +214,9 @@ func (e *Ethernet) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 }
 
 // Read the packet, strip ethernet headers and send it to the reader. Send
-// only the ipv4 packets to the reader
+// only the ipv4 packets to the reader. And for non-ipv4 packets like ARP
+// responses, see if thats an arp response for our nexthop IP address and
+// record it if so
 func (e *Ethernet) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	for {
 		if e.closed {
