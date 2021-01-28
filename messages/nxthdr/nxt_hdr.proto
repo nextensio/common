@@ -34,7 +34,7 @@ message NxtOnboard {
 // the flow can keep changing, but the originAgent will never change. The agents/connectors are expected
 // to preserve this information and carry it across in every header.
 //
-// type: three types of nextensio flows - raw l3 packets, tcp/udp terminated l4, or http proxy packets
+// type: two types of nextensio flows - raw l3 packets, tcp/udp terminated l4
 //
 // key, value: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
 message NxtFlow {
@@ -48,8 +48,7 @@ message NxtFlow {
     string originAgent = 8;
     enum FLOW_TYPE {
         L4 = 0;
-        PROXY = 1;
-        L3 = 2;
+        L3 = 1;
     }
     FLOW_TYPE type = 9;
     string usrattr = 10;

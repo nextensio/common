@@ -5,25 +5,40 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
+	"time"
 
+	"github.com/google/uuid"
 	"gitlab.com/nextensio/common"
 	"gitlab.com/nextensio/common/messages/nxthdr"
 )
 
 type Proxy struct {
-	port   uint16
+	listen uint16
 	conn   net.Conn
+	src    string
+	sport  uint16
+	dest   string
+	dport  uint16
 	closed bool
-	header http.Header
 }
 
 func NewListener(port uint16) *Proxy {
-	return &Proxy{port: port, header: http.Header{}}
+	return &Proxy{listen: port}
 }
 
-func hijackHttp(p *Proxy, w http.ResponseWriter, r *http.Request) {
-	for k, v := range r.Header {
-		p.header[k] = v
+func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *http.Request) {
+	dhost, port, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		s := fmt.Sprintf("Unable get host/port from %s", r.Host)
+		http.Error(w, s, http.StatusInternalServerError)
+		return
+	}
+	dport, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		s := fmt.Sprintf("Unable get host/port from %s", r.Host)
+		http.Error(w, s, http.StatusInternalServerError)
+		return
 	}
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
@@ -35,17 +50,31 @@ func hijackHttp(p *Proxy, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	p.conn = conn
+	shost, port, err := net.SplitHostPort(conn.LocalAddr().String())
+	if err != nil {
+		s := fmt.Sprintf("Unable get local host/port from %s", conn.LocalAddr().String())
+		http.Error(w, s, http.StatusInternalServerError)
+		return
+	}
+	sport, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		s := fmt.Sprintf("Unable get local host/port from %s", conn.LocalAddr().String())
+		http.Error(w, s, http.StatusInternalServerError)
+		return
+	}
+
+	newP := Proxy{src: shost, sport: uint16(sport), dest: dhost, dport: uint16(dport), conn: conn}
+	c <- common.NxtStream{Parent: uuid.New(), Stream: &newP}
 }
 
 func (p *Proxy) Listen(c chan common.NxtStream) {
-	addr := fmt.Sprintf(":%d", p.port)
+	addr := fmt.Sprintf(":%d", p.listen)
 	server := &http.Server{
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodConnect {
 				w.WriteHeader(http.StatusOK)
-				hijackHttp(p, w, r)
+				hijackHttp(p, c, w, r)
 			} else {
 				// We just support connect requests here, not sure when/why
 				// someone would send plain http to us, we "can" handle it
@@ -92,26 +121,28 @@ func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 }
 
 func makeHdr(p *Proxy) *nxthdr.NxtHdr {
-	return &nxthdr.NxtHdr{}
-}
-
-func makeConnect(p *Proxy) []byte {
-	return []byte{}
+	flow := nxthdr.NxtFlow{}
+	flow.Source = p.src
+	flow.Sport = uint32(p.sport)
+	flow.Dest = p.dest
+	flow.Dport = uint32(p.dport)
+	flow.DestAgent = p.dest
+	flow.Type = nxthdr.NxtFlow_L4
+	flow.Proto = common.TCP
+	hdr := nxthdr.NxtHdr{}
+	hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
+	return &hdr
 }
 
 func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
-	// Send the initial connect headers on the first read
-	if len(p.header) != 0 {
-		connect := makeConnect(p)
-		hdr := makeHdr(p)
-		// Now reset the headers so its not sent again
-		p.header = http.Header{}
-		return hdr, net.Buffers{connect}, nil
-	}
 	buf := make([]byte, common.MAXBUF)
 	n, err := p.conn.Read(buf)
 	if err != nil {
 		return nil, nil, common.Err(common.CONNECTION_ERR, err)
 	}
 	return makeHdr(p), net.Buffers{buf[0:n]}, nil
+}
+
+func (p *Proxy) SetReadDeadline(t time.Time) *common.NxtError {
+	return nil
 }
