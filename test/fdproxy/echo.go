@@ -10,7 +10,7 @@ import (
 
 	"gitlab.com/nextensio/common"
 	"gitlab.com/nextensio/common/transport/fd"
-	"gitlab.com/nextensio/common/transport/proxy"
+	proxy "gitlab.com/nextensio/common/transport/l3proxy"
 	"golang.org/x/sys/unix"
 )
 

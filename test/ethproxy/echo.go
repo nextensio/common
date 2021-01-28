@@ -13,7 +13,7 @@ import (
 
 	"gitlab.com/nextensio/common"
 	"gitlab.com/nextensio/common/transport/ethernet"
-	"gitlab.com/nextensio/common/transport/proxy"
+	proxy "gitlab.com/nextensio/common/transport/l3proxy"
 )
 
 func defaultIntf() (string, net.IP) {
