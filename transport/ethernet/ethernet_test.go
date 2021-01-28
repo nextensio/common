@@ -18,7 +18,7 @@ import (
 	"gitlab.com/nextensio/common"
 )
 
-// NOTE: The af-packet stuff needs sudo permissions to run. It can be run as below
+// NOTE: The af-packet stuff here needs sudo permissions to run. It can be run as below
 // sudo /usr/local/go/bin/go test
 
 func defaultIntf() (string, net.IP) {

@@ -14,6 +14,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// NOTE: The /dev/net/tun stuff needs sudo permissions to run. It can be run as below
+// sudo /usr/local/go/bin/go test
+
 var testSrcip = "192.0.2.1"
 var testDstip = "198.51.100.1"
 
