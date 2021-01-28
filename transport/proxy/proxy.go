@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -58,6 +59,10 @@ type Proxy struct {
 	http      text
 	tr        *tcp.ForwarderRequest
 	udp       *gonet.UDPConn
+	sip       net.IP
+	sport     uint16
+	dip       net.IP
+	dport     uint16
 	service   string
 	closed    bool
 }
@@ -161,6 +166,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 	// will be rejected after that
 	fwdTcp := tcp.NewForwarder(ipstack, 0, 1024, func(r *tcp.ForwarderRequest) {
 		var wq waiter.Queue
+		id := r.ID()
 		ep, err := r.CreateEndpoint(&wq)
 		if err != nil {
 			r.Complete(true)
@@ -170,7 +176,12 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		tcp := gonet.NewTCPConn(&wq, ep)
 		parse := make([]byte, TCP_PARSE_SZ)
 		parsed := make(chan struct{})
-		proxy := &Proxy{tcp: tcp, tr: r, tcpParse: parse, tcpParsed: parsed, tcpLen: 0}
+		fmt.Println(id.LocalAddress.String(), id.LocalPort, id.RemoteAddress.String(), id.RemotePort)
+		proxy := &Proxy{
+			tcp: tcp, tr: r, tcpParse: parse, tcpParsed: parsed, tcpLen: 0,
+			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
+			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
+		}
 		go tcpParse(proxy)
 		c <- common.NxtStream{Parent: uuid, Stream: proxy}
 	})
@@ -178,12 +189,17 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 
 	fwdUdp := udp.NewForwarder(ipstack, func(r *udp.ForwarderRequest) {
 		var wq waiter.Queue
+		id := r.ID()
 		ep, err := r.CreateEndpoint(&wq)
 		if err != nil {
 			return
 		}
 		udp := gonet.NewUDPConn(ipstack, &wq, ep)
-		proxy := &Proxy{udp: udp}
+		proxy := &Proxy{
+			udp: udp,
+			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
+			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
+		}
 		c <- common.NxtStream{Parent: uuid, Stream: proxy}
 	})
 	ipstack.SetTransportProtocolHandler(udp.ProtocolNumber, fwdUdp.HandlePacket)
@@ -346,9 +362,9 @@ func parseTLS(p *Proxy) bool {
 }
 
 func tcpParse(p *Proxy) {
-	// Cant wait for ever to decide if its plain text http or if its tls SNI
-	p.SetReadDeadline(time.Now().Add(TCP_PARSE_TIMEOUT))
 	for {
+		// Cant wait for ever to decide if its plain text http or if its tls SNI
+		p.tcp.SetReadDeadline(time.Now().Add(TCP_PARSE_TIMEOUT))
 		n, err := p.tcp.Read(p.tcpParse[p.tcpLen:])
 		prev := p.tcpLen
 		p.tcpLen += n
@@ -369,10 +385,33 @@ func tcpParse(p *Proxy) {
 		}
 	}
 
+	// If we cant find a service name, the destination IP is the service name
+	if p.service == "" {
+		p.service = p.dip.String()
+	}
 	// Cancel the timeouts
-	p.SetReadDeadline(time.Time{})
+	p.tcp.SetReadDeadline(time.Time{})
 	// Parsing activity completed (succesfully or unsuccesfully)
 	close(p.tcpParsed)
+}
+
+func makeHdr(p *Proxy) *nxthdr.NxtHdr {
+	flow := nxthdr.NxtFlow{}
+	flow.Source = p.sip.String()
+	flow.Sport = uint32(p.sport)
+	flow.Dest = p.dip.String()
+	flow.Dport = uint32(p.dport)
+	flow.DestAgent = p.service
+	flow.Type = nxthdr.NxtFlow_L4
+	if p.tcp != nil {
+		flow.Proto = common.TCP
+	} else if p.udp != nil {
+		flow.Proto = common.UDP
+	}
+
+	hdr := nxthdr.NxtHdr{}
+	hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
+	return &hdr
 }
 
 func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
@@ -383,26 +422,27 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	select {
 	case <-p.tcpParsed:
 	}
-
+	// We have some data buffered as part of the tcp parsing, return that first
+	// and read the next set of data in the next call to Read()
 	if p.tcpLen != 0 {
-		return nil, net.Buffers{p.tcpParse[0:p.tcpLen]}, nil
+		return makeHdr(p), net.Buffers{p.tcpParse[0:p.tcpLen]}, nil
 	}
+
+	var err error
+	var n int
 	buf := make([]byte, common.MAXBUF)
 	if p.tcp != nil {
-		len, err := p.tcp.Read(buf)
-		if err != nil {
-			return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		n, err = p.tcp.Read(buf)
+		if err == nil {
+			return makeHdr(p), net.Buffers{buf[:n]}, nil
 		}
-		return nil, net.Buffers{buf[:len]}, nil
 	} else if p.udp != nil {
-		len, err := p.udp.Read(buf)
-		if err != nil {
-			return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		n, err = p.udp.Read(buf)
+		if err == nil {
+			return makeHdr(p), net.Buffers{buf[:n]}, nil
 		}
-		return nil, net.Buffers{buf[:len]}, nil
-	} else {
-		return nil, nil, common.Err(common.GENERAL_ERR, nil)
 	}
+	return nil, nil, common.Err(common.CONNECTION_ERR, err)
 }
 
 func (p *Proxy) SetReadDeadline(t time.Time) *common.NxtError {

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	GENERAL_ERR = 1
+	GENERAL_ERR = 1 + iota
 	CONNECTION_ERR
 )
 

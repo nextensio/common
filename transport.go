@@ -19,15 +19,15 @@ const (
 
 const (
 	// Just created
-	TCP_INIT = 0
+	TCP_INIT = iota
 	// SYN sent
-	TCP_SYN = 1
+	TCP_SYN
 	// SYN seen, SYN ACK seen
-	TCP_SYN_ACK = 2
+	TCP_SYN_ACK
 	// SYN seen, SYN_ACK seen, ACK seen
-	TCP_ACK = 3
+	TCP_ACK
 	// RESET or FIN seen
-	TCP_CLOSED = 4
+	TCP_CLOSED
 )
 
 const (
