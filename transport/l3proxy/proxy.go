@@ -35,6 +35,18 @@ const (
 	TCP_PARSE_TIMEOUT = 5 * time.Millisecond // 5 msecs to get all the http request header / tls client hello
 )
 
+var methods = []string{
+	http.MethodGet,
+	http.MethodHead,
+	http.MethodPost,
+	http.MethodPut,
+	http.MethodPatch,
+	http.MethodDelete,
+	http.MethodConnect,
+	http.MethodOptions,
+	http.MethodTrace,
+}
+
 type tls struct {
 	notTls bool
 }
@@ -302,7 +314,6 @@ func parseHTTP(p *Proxy, prev int) bool {
 			return false
 		}
 		valid := false
-		methods := []string{"GET", "PUT", "POST", "CONNECT", "HEAD", "DELETE", "PATCH", "OPTIONS"}
 		for _, m := range methods {
 			if strings.ToUpper(req.Method) == m {
 				valid = true

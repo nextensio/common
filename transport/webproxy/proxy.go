@@ -140,7 +140,7 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if err != nil {
 		return nil, nil, common.Err(common.CONNECTION_ERR, err)
 	}
-	return makeHdr(p), net.Buffers{buf[0:n]}, nil
+	return makeHdr(p), net.Buffers{buf[:n]}, nil
 }
 
 func (p *Proxy) SetReadDeadline(t time.Time) *common.NxtError {
