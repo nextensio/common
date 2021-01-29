@@ -481,6 +481,9 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 //    hashtables/datastructures, because we know there wont be any more packets on that stream
 //    from the other end
 func (h *WebStream) Close() *common.NxtError {
+	if h.session == nil {
+		return nil
+	}
 	select {
 	case h.sendClose <- true:
 		return nil
