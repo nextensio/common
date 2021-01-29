@@ -31,7 +31,7 @@ import (
 const (
 	TLS_HDRLEN        = 5
 	TCP_PARSE_SZ      = 2 * common.MAXBUF
-	TCP_PARSE_TIMEOUT = 5 * time.Millisecond // 5 msecs to get all the http request header / tls client hello
+	TCP_PARSE_TIMEOUT = 20 * time.Millisecond // 20 msecs to get all the http request header / tls client hello
 )
 
 var methods = []string{
@@ -346,6 +346,8 @@ func parseHTTP(p *Proxy, prev int) bool {
 			return false
 		}
 		p.service = req.Host
+		flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
+		flow.DestAgent = p.service
 		return true
 	}
 
@@ -385,6 +387,8 @@ func parseTLS(p *Proxy) bool {
 	}
 	// The TLS SNI is our service name
 	p.service = hello.SNI
+	flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
+	flow.DestAgent = p.service
 
 	return true
 }
@@ -434,7 +438,9 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	// We have some data buffered as part of the tcp parsing, return that first
 	// and read the next set of data in the next call to Read()
 	if p.tcpLen != 0 {
-		return p.hdr, net.Buffers{p.tcpParse[0:p.tcpLen]}, nil
+		n := p.tcpLen
+		p.tcpLen = 0
+		return p.hdr, net.Buffers{p.tcpParse[0:n]}, nil
 	}
 
 	var err error
