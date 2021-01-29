@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -207,7 +206,6 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		tcp := gonet.NewTCPConn(&wq, ep)
 		parse := make([]byte, TCP_PARSE_SZ)
 		parsed := make(chan struct{})
-		fmt.Println(id.LocalAddress.String(), id.LocalPort, id.RemoteAddress.String(), id.RemotePort)
 		proxy := &Proxy{
 			tcp: tcp, tcpParse: parse, tcpParsed: parsed, tcpLen: 0,
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
