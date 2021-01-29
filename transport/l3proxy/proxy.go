@@ -69,7 +69,6 @@ type Proxy struct {
 	tcpLen    int
 	tls       tls
 	http      text
-	tr        *tcp.ForwarderRequest
 	udp       *gonet.UDPConn
 	sip       net.IP
 	sport     uint16
@@ -210,7 +209,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		parsed := make(chan struct{})
 		fmt.Println(id.LocalAddress.String(), id.LocalPort, id.RemoteAddress.String(), id.RemotePort)
 		proxy := &Proxy{
-			tcp: tcp, tr: r, tcpParse: parse, tcpParsed: parsed, tcpLen: 0,
+			tcp: tcp, tcpParse: parse, tcpParsed: parsed, tcpLen: 0,
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}
@@ -247,7 +246,6 @@ func (p *Proxy) Dial(sChan chan common.NxtStream) *common.NxtError {
 
 func (p *Proxy) Close() *common.NxtError {
 	if p.tcp != nil {
-		p.tr.Complete(false)
 		p.tcp.Close()
 	} else if p.udp != nil {
 		p.udp.Close()
