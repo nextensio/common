@@ -65,15 +65,15 @@ func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *htt
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	shost, port, err := net.SplitHostPort(conn.LocalAddr().String())
+	shost, port, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
-		s := fmt.Sprintf("Unable get local host/port from %s", conn.LocalAddr().String())
+		s := fmt.Sprintf("Unable get local host/port from %s", conn.RemoteAddr().String())
 		http.Error(w, s, http.StatusInternalServerError)
 		return
 	}
 	sport, err := strconv.ParseUint(port, 10, 16)
 	if err != nil {
-		s := fmt.Sprintf("Unable get local host/port from %s", conn.LocalAddr().String())
+		s := fmt.Sprintf("Unable get local host/port from %s", conn.RemoteAddr().String())
 		http.Error(w, s, http.StatusInternalServerError)
 		return
 	}
