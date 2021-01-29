@@ -347,6 +347,7 @@ func parseHTTP(p *Proxy, prev int) bool {
 		}
 		p.service = req.Host
 		flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
+		flow.Dest = p.service
 		flow.DestAgent = p.service
 		return true
 	}
@@ -388,6 +389,7 @@ func parseTLS(p *Proxy) bool {
 	// The TLS SNI is our service name
 	p.service = hello.SNI
 	flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
+	flow.Dest = p.service
 	flow.DestAgent = p.service
 
 	return true
