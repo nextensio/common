@@ -349,6 +349,36 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 	return nil
 }
 
+func (b *httpBody) readData(data nxtData) error {
+	// Encode nextensio header and the header length
+	out, err := proto.Marshal(data.hdr)
+	if err != nil {
+		atomic.AddInt32(&b.h.nthreads, -1)
+		return err
+	}
+	hdrlen := len(out)
+	var varint1 [common.MAXVARINT_BUF]byte
+	plen1 := binary.PutUvarint(varint1[0:], uint64(hdrlen))
+	dataLen := plen1 + hdrlen
+	for i := 0; i < len(data.data); i++ {
+		dataLen += len(data.data[i])
+	}
+	// Encode the total length including nextensio headers, header length and payload
+	var varint2 [common.MAXVARINT_BUF]byte
+	plen2 := binary.PutUvarint(varint2[0:], uint64(dataLen))
+
+	hdrs := make([]byte, plen2+plen1+hdrlen)
+	copy(hdrs[0:], varint2[0:plen2])
+	copy(hdrs[plen2:], varint1[0:plen1])
+	copy(hdrs[plen2+plen1:], out)
+	newbuf := append(net.Buffers{hdrs}, data.data...)
+	b.bufs = newbuf
+	b.idx = 0
+	b.off = 0
+
+	return nil
+}
+
 // Send one nextensio frame worth of data each time Read() is called, if there
 // are no nextensio frames, block till one is available
 func (b *httpBody) Read(p []byte) (n int, err error) {
@@ -360,34 +390,22 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 	if b.bufs == nil {
 		select {
 		case data := <-b.txChan:
-			// Encode nextensio header and the header length
-			out, err := proto.Marshal(data.hdr)
+			err := b.readData(data)
 			if err != nil {
-				atomic.AddInt32(&b.h.nthreads, -1)
 				return 0, err
 			}
-			hdrlen := len(out)
-			var varint1 [common.MAXVARINT_BUF]byte
-			plen1 := binary.PutUvarint(varint1[0:], uint64(hdrlen))
-			dataLen := plen1 + hdrlen
-			for i := 0; i < len(data.data); i++ {
-				dataLen += len(data.data[i])
-			}
-			// Encode the total length including nextensio headers, header length and payload
-			var varint2 [common.MAXVARINT_BUF]byte
-			plen2 := binary.PutUvarint(varint2[0:], uint64(dataLen))
-
-			hdrs := make([]byte, plen2+plen1+hdrlen)
-			copy(hdrs[0:], varint2[0:plen2])
-			copy(hdrs[plen2:], varint1[0:plen1])
-			copy(hdrs[plen2+plen1:], out)
-			newbuf := append(net.Buffers{hdrs}, data.data...)
-			b.bufs = newbuf
-			b.idx = 0
-			b.off = 0
 		case <-b.h.streamClosed:
-			atomic.AddInt32(&b.h.nthreads, -1)
-			return 0, io.EOF
+			// Drain and send all the queued up tx data before closing
+			select {
+			case data := <-b.txChan:
+				err := b.readData(data)
+				if err != nil {
+					return 0, err
+				}
+			default:
+				atomic.AddInt32(&b.h.nthreads, -1)
+				return 0, io.EOF
+			}
 		}
 	}
 

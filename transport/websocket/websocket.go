@@ -313,6 +313,19 @@ func streamWrite(h *WebStream) {
 		err := false
 		select {
 		case err = <-h.sendClose:
+			// Drain all tx data before closing
+			select {
+			case data := <-h.txData:
+				// TODO: check if we have window enough to send, otherwise block till we get enough window.
+				// Blocking here will block the txData channel and will automatically block whoever is writing
+				// to it etc.. and it will cascade that block all the way to the other end
+				err = false
+				if nxtWriteData(h, data) != nil {
+					err = true
+				}
+			default:
+				err = true
+			}
 		case data := <-h.txData:
 			// TODO: check if we have window enough to send, otherwise block till we get enough window.
 			// Blocking here will block the txData channel and will automatically block whoever is writing

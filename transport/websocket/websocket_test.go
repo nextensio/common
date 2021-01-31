@@ -283,7 +283,7 @@ func Test2ClientStreams(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		s := wsock.NewStream(nil)
 		cast := s.(*WebStream)
-		if int(cast.stream) != i+1 {
+		if int(cast.stream) != 2*(i+1) {
 			panic(cast.stream)
 		}
 		streams = append(streams, s)
@@ -377,7 +377,7 @@ func Test3ClientStreamServerClose(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		s := wsock.NewStream(nil)
 		cast := s.(*WebStream)
-		if int(cast.stream) != i+1 {
+		if int(cast.stream) != 2*(i+1) {
 			panic(cast.stream)
 		}
 		streams = append(streams, s)
@@ -496,8 +496,8 @@ func Test4ServerStreams(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		s := serverStream[0].NewStream(nil)
 		cast := s.(*WebStream)
-		if cast.stream != 0x8000000000000000|uint64(i+1) {
-			fmt.Printf("Got streamid %x, expected %x", cast.stream, 0x1000000000000000|uint64(i+1))
+		if cast.stream != uint64(2*(i+1)+1) {
+			fmt.Printf("Got streamid %x, expected %x", cast.stream, 2*(i+1)+1)
 			panic(0)
 		}
 		streams = append(streams, s)
@@ -601,8 +601,8 @@ func Test5ServerStreamsClientClose(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		s := serverStream[0].NewStream(nil)
 		cast := s.(*WebStream)
-		if cast.stream != 0x8000000000000000|uint64(i+1) {
-			fmt.Printf("Got streamid %x, expected %x", cast.stream, 0x1000000000000000|uint64(i+1))
+		if cast.stream != uint64(2*(i+1)+1) {
+			fmt.Printf("Got streamid %x, expected %x", cast.stream, 2*(i+1)+1)
 			panic(0)
 		}
 		streams = append(streams, s)
