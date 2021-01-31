@@ -29,9 +29,11 @@ import (
 )
 
 const (
-	TLS_HDRLEN        = 5
-	TCP_PARSE_SZ      = 2 * common.MAXBUF
-	TCP_PARSE_TIMEOUT = 20 * time.Millisecond // 20 msecs to get all the http request header / tls client hello
+	TLS_HDRLEN   = 5
+	TCP_PARSE_SZ = 2 * common.MAXBUF
+	// 100 msecs to get all the http request header / tls client hello.
+	// TODO: This will undergo more tweaking in future, for now setting it to a considerably high value
+	TCP_PARSE_TIMEOUT = 100 * time.Millisecond
 )
 
 var methods = []string{
@@ -140,7 +142,7 @@ func makeHdr(p *Proxy) *nxthdr.NxtHdr {
 	flow.Sport = uint32(p.sport)
 	flow.Dest = p.dip.String()
 	flow.Dport = uint32(p.dport)
-	flow.DestAgent = p.service
+	flow.DestAgent = flow.Dest // This will get overridden once we parse http/sni
 	flow.Type = nxthdr.NxtFlow_L4
 	if p.tcp != nil {
 		flow.Proto = common.TCP
