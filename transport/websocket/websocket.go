@@ -314,17 +314,21 @@ func streamWrite(h *WebStream) {
 		select {
 		case err = <-h.sendClose:
 			// Drain all tx data before closing
-			select {
-			case data := <-h.txData:
-				// TODO: check if we have window enough to send, otherwise block till we get enough window.
-				// Blocking here will block the txData channel and will automatically block whoever is writing
-				// to it etc.. and it will cascade that block all the way to the other end
-				err = false
-				if nxtWriteData(h, data) != nil {
+		Loop:
+			for {
+				select {
+				case data := <-h.txData:
+					// TODO: check if we have window enough to send, otherwise block till we get enough window.
+					// Blocking here will block the txData channel and will automatically block whoever is writing
+					// to it etc.. and it will cascade that block all the way to the other end
+					if nxtWriteData(h, data) != nil {
+						err = true
+						break Loop
+					}
+				default:
 					err = true
+					break Loop
 				}
-			default:
-				err = true
 			}
 		case data := <-h.txData:
 			// TODO: check if we have window enough to send, otherwise block till we get enough window.
@@ -542,8 +546,13 @@ func (h *WebStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	case data := <-h.rxData:
 		return data.hdr, data.data, nil
 	case <-h.streamClosed:
-		// Stream is closed
-		return nil, nil, common.Err(common.CONNECTION_ERR, nil)
+		// Stream is closed, drain all Rx if any, before returning error
+		select {
+		case data := <-h.rxData:
+			return data.hdr, data.data, nil
+		default:
+			return nil, nil, common.Err(common.CONNECTION_ERR, nil)
+		}
 	}
 }
 
