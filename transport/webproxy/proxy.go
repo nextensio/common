@@ -3,6 +3,7 @@ package webproxy
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -139,7 +140,9 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	buf := make([]byte, common.MAXBUF)
 	n, err := p.conn.Read(buf)
 	if err != nil {
-		return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		if err != io.EOF || n == 0 {
+			return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		}
 	}
 	return p.hdr, net.Buffers{buf[:n]}, nil
 }

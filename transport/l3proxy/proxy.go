@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -452,12 +453,12 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	buf := make([]byte, common.MAXBUF)
 	if p.tcp != nil {
 		n, err = p.tcp.Read(buf)
-		if err == nil {
+		if err == nil || (err == io.EOF && n > 0) {
 			return p.hdr, net.Buffers{buf[:n]}, nil
 		}
 	} else if p.udp != nil {
 		n, err = p.udp.Read(buf)
-		if err == nil {
+		if err == nil || (err == io.EOF && n > 0) {
 			return p.hdr, net.Buffers{buf[:n]}, nil
 		}
 	}

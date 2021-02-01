@@ -3,6 +3,7 @@ package fd
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -83,7 +84,9 @@ func (f *Fd) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	buf := make([]byte, common.MAXBUF)
 	n, err := f.f.Read(buf)
 	if err != nil {
-		return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		if err != io.EOF || n == 0 {
+			return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		}
 	}
 	return nil, net.Buffers{buf[0:n]}, nil
 }

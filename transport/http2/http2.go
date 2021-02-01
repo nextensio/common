@@ -147,13 +147,20 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 				end = offset + remaining
 			}
 			n, err := r.Body.Read(buf[offset:end])
-			if err != nil {
+			// io.EOF can have a nonzero number of bytes read which we have to process
+			if err != nil && err != io.EOF {
 				stream.Close()
 				atomic.AddInt32(&stream.listener.nthreads, -1)
 				return
 			}
 			remaining -= n
 			offset += n
+			if err == io.EOF && remaining > 0 {
+				// well, stream ended and we havent got all our bytes, so close the stream
+				stream.Close()
+				atomic.AddInt32(&stream.listener.nthreads, -1)
+				return
+			}
 			if offset == end {
 				nbufs = append(nbufs, buf[0:end])
 				if remaining != 0 {
@@ -491,8 +498,14 @@ func (h *HttpStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	case data := <-h.rxData:
 		return data.hdr, data.data, nil
 	case <-h.streamClosed:
-		// Stream is closed
-		return nil, nil, common.Err(common.CONNECTION_ERR, nil)
+		// Drain out the data that was read before the session was closed
+		select {
+		case data := <-h.rxData:
+			return data.hdr, data.data, nil
+		default:
+			// Stream is closed, no more data to flush out
+			return nil, nil, common.Err(common.CONNECTION_ERR, nil)
+		}
 	}
 }
 

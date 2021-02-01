@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -227,11 +228,15 @@ func (q *Quic) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 			end = offset + remaining
 		}
 		n, err := q.stream.Read(buf[offset:end])
-		if err != nil {
+		if err != nil && err != io.EOF {
 			return nil, nil, common.Err(common.CONNECTION_ERR, err)
 		}
 		remaining -= n
 		offset += n
+		if err == io.EOF && remaining > 0 {
+			// well, stream ended and we havent got all our bytes, so close the stream
+			return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		}
 		if offset == end {
 			nbufs = append(nbufs, buf[0:end])
 			if remaining != 0 {

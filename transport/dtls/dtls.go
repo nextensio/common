@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -171,7 +172,9 @@ func (d *Dtls) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	hdr := &nxthdr.NxtHdr{}
 	dataLen, err := d.conn.Read(buf[0:])
 	if err != nil {
-		return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		if err != io.EOF || dataLen == 0 {
+			return nil, nil, common.Err(common.CONNECTION_ERR, err)
+		}
 	}
 
 	noff := 0
