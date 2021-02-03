@@ -84,6 +84,7 @@ type nxtData struct {
 
 type WebStream struct {
 	ctx           context.Context
+	lg            *log.Logger
 	serverIP      string
 	serverName    string
 	port          int
@@ -100,16 +101,16 @@ type WebStream struct {
 	streamClosed  chan struct{}
 }
 
-func NewListener(ctx context.Context, pvtKey []byte, pubKey []byte, port int) *WebStream {
+func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int) *WebStream {
 	return &WebStream{
-		ctx: ctx, pvtKey: pvtKey, pubKey: pubKey, port: port,
+		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
 	}
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new websocket is initiated
-func NewClient(ctx context.Context, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header) *WebStream {
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header) *WebStream {
 	return &WebStream{
-		ctx: ctx, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port, requestHeader: requestHeader,
+		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port, requestHeader: requestHeader,
 	}
 }
 

@@ -71,10 +71,11 @@ func proxyEcho(p common.Transport) {
 func main() {
 	mainCtx := context.Background()
 	nfd := createTun()
-	f := fd.NewClient(mainCtx, uintptr(nfd))
+	lg := log.New(os.Stdout, "test", 0)
+	f := fd.NewClient(mainCtx, lg, uintptr(nfd))
 	c := make(chan common.NxtStream)
 	f.Dial(c)
-	p := proxy.NewListener(f, net.ParseIP("1.1.1.1"))
+	p := proxy.NewListener(mainCtx, lg, f, net.ParseIP("1.1.1.1"))
 	go p.Listen(c)
 	for {
 		select {

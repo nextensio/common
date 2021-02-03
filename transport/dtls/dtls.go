@@ -34,6 +34,7 @@ import (
 //
 type Dtls struct {
 	ctx        context.Context
+	lg         *log.Logger
 	serverIP   string
 	serverName string
 	port       int
@@ -45,12 +46,12 @@ type Dtls struct {
 	closed     bool
 }
 
-func NewListener(ctx context.Context, pvtKey []byte, pubKey []byte, port int) *Dtls {
-	return &Dtls{ctx: ctx, pvtKey: pvtKey, pubKey: pubKey, port: port}
+func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int) *Dtls {
+	return &Dtls{ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port}
 }
 
-func NewClient(ctx context.Context, cacert []byte, serverName string, serverIP string, port int) *Dtls {
-	return &Dtls{ctx: ctx, caCert: cacert, serverIP: serverIP, serverName: serverName, port: port}
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int) *Dtls {
+	return &Dtls{ctx: ctx, lg: lg, caCert: cacert, serverIP: serverIP, serverName: serverName, port: port}
 }
 
 func (d *Dtls) Listen(c chan common.NxtStream) {
@@ -62,7 +63,7 @@ func (d *Dtls) Listen(c chan common.NxtStream) {
 	for {
 		conn, err := d.listener.Accept()
 		if err != nil {
-			log.Printf("Listen error %v", err)
+			d.lg.Printf("Listen error %v", err)
 			continue
 		}
 		client := &Dtls{conn: conn.(*dtls.Conn)}

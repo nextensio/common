@@ -29,6 +29,7 @@ const (
 // the Read(). Note that there is no nextensio headers in the Read or Write
 // direction, we are just dealing with rx/tx of ethernet packets here
 type Ethernet struct {
+	lg         *log.Logger
 	device     string
 	ip         net.IP
 	nexthop    net.IP
@@ -43,7 +44,7 @@ type Ethernet struct {
 	ethhdr     []byte
 }
 
-func NewClient(ctx context.Context, device string, nexthop net.IP) *Ethernet {
+func NewClient(ctx context.Context, lg *log.Logger, device string, nexthop net.IP) *Ethernet {
 	intf, err := net.InterfaceByName(device)
 	if err != nil {
 		return nil
@@ -73,7 +74,7 @@ Loop:
 		return nil
 	}
 	return &Ethernet{
-		device: device, ip: ip, nexthop: nexthop.To4(),
+		lg: lg, device: device, ip: ip, nexthop: nexthop.To4(),
 		snaplen: common.MAXBUF, bufferSize: 1 /*MB*/, srcmac: intf.HardwareAddr,
 	}
 }

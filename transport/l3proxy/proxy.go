@@ -62,6 +62,8 @@ type text struct {
 // reader. And similarly the writer can write data which will get dressed
 // up with tcp/udp headers etc.. and get sent over the device
 type Proxy struct {
+	ctx       context.Context
+	lg        *log.Logger
 	deviceIP  net.IP
 	device    common.Transport
 	linkEP    *channel.Endpoint
@@ -90,7 +92,7 @@ func (p *Proxy) deviceToProxy() {
 	for {
 		_, buf, err := p.device.Read()
 		if err != nil {
-			log.Println("Device read error")
+			p.lg.Println("Device read error")
 			p.Close()
 			return
 		}
@@ -112,7 +114,7 @@ func (p *Proxy) proxyToDevice() {
 	for {
 		packetInfo, ok := p.linkEP.ReadContext(context.Background())
 		if !ok {
-			log.Println("linkEP ReadContext ok=false")
+			p.lg.Println("linkEP ReadContext ok=false")
 			continue
 		}
 
@@ -126,15 +128,15 @@ func (p *Proxy) proxyToDevice() {
 		full = append(full, pkt.Data.ToView()...)
 
 		if err := p.device.Write(nil, net.Buffers{full}); err != nil {
-			log.Println("device write error", err)
+			p.lg.Println("device write error", err)
 			p.Close()
 			return
 		}
 	}
 }
 
-func NewListener(device common.Transport, deviceIP net.IP) *Proxy {
-	return &Proxy{device: device, deviceIP: deviceIP}
+func NewListener(ctx context.Context, lg *log.Logger, device common.Transport, deviceIP net.IP) *Proxy {
+	return &Proxy{ctx: ctx, lg: lg, device: device, deviceIP: deviceIP}
 }
 
 func makeHdr(p *Proxy) *nxthdr.NxtHdr {

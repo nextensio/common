@@ -1,9 +1,11 @@
 package webproxy
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -15,6 +17,8 @@ import (
 )
 
 type Proxy struct {
+	ctx    context.Context
+	lg     *log.Logger
 	listen uint16
 	conn   net.Conn
 	src    string
@@ -25,8 +29,8 @@ type Proxy struct {
 	hdr    *nxthdr.NxtHdr
 }
 
-func NewListener(port uint16) *Proxy {
-	return &Proxy{listen: port}
+func NewListener(ctx context.Context, lg *log.Logger, port uint16) *Proxy {
+	return &Proxy{ctx: ctx, lg: lg, listen: port}
 }
 
 func makeHdr(p *Proxy) *nxthdr.NxtHdr {

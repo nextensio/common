@@ -57,6 +57,7 @@ type httpBody struct {
 // The payload is the actual application data
 type HttpStream struct {
 	ctx           context.Context
+	lg            *log.Logger
 	serverIP      string
 	serverName    string
 	port          int
@@ -80,17 +81,17 @@ type HttpStream struct {
 // clientUuidHdr: On the server, to be able to identify which streams come from the same client, we need to
 // tell the server to look for a particular http header name whose value will be the client's
 // unique identify (uuid). So all streams with the same value for that http header, are from the same client
-func NewListener(ctx context.Context, pvtKey []byte, pubKey []byte, port int, clientUuidHdr string) *HttpStream {
+func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, clientUuidHdr string) *HttpStream {
 	return &HttpStream{
-		ctx: ctx, pvtKey: pvtKey, pubKey: pubKey, port: port,
+		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		clientUuidHdr: clientUuidHdr,
 	}
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
-func NewClient(ctx context.Context, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header) *HttpStream {
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header) *HttpStream {
 	h := HttpStream{
-		ctx: ctx, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
+		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
 		streamClosed:  make(chan struct{}),
 	}
@@ -217,7 +218,7 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	atomic.AddInt32(&h.nthreads, 1)
 	rxData := make(chan nxtData)
 	stream := &HttpStream{
-		ctx: h.ctx, rxData: rxData, server: true, serverBody: r.Body,
+		ctx: h.ctx, lg: h.lg, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
 	}
 	c <- common.NxtStream{Parent: u, Stream: stream}
@@ -258,7 +259,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 		}
 		err = server.ListenAndServeTLS("", "")
 		if err != nil {
-			log.Println("Https listen failed")
+			h.lg.Println("Https listen failed")
 			return
 		}
 	} else {
@@ -268,7 +269,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 		}
 		err := server.ListenAndServe()
 		if err != nil {
-			log.Println("Http listen failed")
+			h.lg.Println("Http listen failed")
 			return
 		}
 	}
@@ -482,7 +483,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 			}
 		}
 	}
-	nh := NewClient(h.ctx, h.caCert, h.serverName, h.serverIP, h.port, hdr)
+	nh := NewClient(h.ctx, h.lg, h.caCert, h.serverName, h.serverIP, h.port, hdr)
 	if nh.Dial(h.sChan) != nil {
 		return nil
 	}

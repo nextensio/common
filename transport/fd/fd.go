@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -28,13 +29,14 @@ import (
 // vpnService Builder setBlocking() to make sure that fd is blocking, and whatever
 // equivalent on ios networkExtension and windows etc..
 type Fd struct {
+	lg     *log.Logger
 	f      *os.File
 	closed bool
 }
 
-func NewClient(ctx context.Context, fd uintptr) *Fd {
+func NewClient(ctx context.Context, lg *log.Logger, fd uintptr) *Fd {
 	f := os.NewFile(fd, "pipe")
-	return &Fd{f: f}
+	return &Fd{lg: lg, f: f}
 }
 
 func (f *Fd) Listen(c chan common.NxtStream) {

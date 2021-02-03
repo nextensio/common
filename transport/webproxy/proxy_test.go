@@ -1,8 +1,11 @@
 package webproxy
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net"
+	"os"
 	"testing"
 
 	"gitlab.com/nextensio/common"
@@ -66,7 +69,9 @@ func proxyToNet(p common.Transport) {
 	}
 }
 func TestProxy(t *testing.T) {
-	p := NewListener(8080)
+	mainCtx := context.Background()
+	lg := log.New(os.Stdout, "test", 0)
+	p := NewListener(mainCtx, lg, 8080)
 	c := make(chan common.NxtStream)
 	go p.Listen(c)
 	for {

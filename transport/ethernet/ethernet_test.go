@@ -113,7 +113,8 @@ func TestReadWrite(t *testing.T) {
 		panic("Cannot find default interface")
 	}
 	fmt.Println("Testing on interface", intf)
-	e := NewClient(mainCtx, intf, nhop)
+	lg := log.New(os.Stdout, "test", 0)
+	e := NewClient(mainCtx, lg, intf, nhop)
 	c := make(chan common.NxtStream)
 	e.Dial(c)
 	for len(e.dstmac) == 0 {

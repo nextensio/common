@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -74,7 +75,8 @@ func readStream(ctx context.Context, parent uuid.UUID, tunnel common.Transport) 
 
 func websockServer(ctx context.Context, sChan chan common.NxtStream) {
 	pvtKey, pubKey := getKeys()
-	server := NewListener(ctx, pvtKey, pubKey, testPort)
+	lg := log.New(os.Stdout, "test", 0)
+	server := NewListener(ctx, lg, pvtKey, pubKey, testPort)
 	go server.Listen(sChan)
 	for {
 		select {
@@ -98,7 +100,8 @@ func dialWebsock(ctx context.Context, serverName string, serverIP string, port i
 		log.Fatal(err)
 	}
 	retry := 0
-	sock := NewClient(ctx, cert, serverName, serverIP, port, nil)
+	lg := log.New(os.Stdout, "test", 0)
+	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, nil)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++

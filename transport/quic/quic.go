@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 // The payload is the actual application data
 type Quic struct {
 	ctx       context.Context
+	lg        *log.Logger
 	server    string
 	port      int
 	pvtKey    []byte
@@ -51,12 +53,12 @@ func (q *Quic) serverTLS() *tls.Config {
 	}
 }
 
-func NewListener(ctx context.Context, pvtKey []byte, pubKey []byte, port int) *Quic {
-	return &Quic{ctx: ctx, pvtKey: pvtKey, pubKey: pubKey, port: port}
+func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int) *Quic {
+	return &Quic{ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port}
 }
 
-func NewClient(ctx context.Context, cacert []byte, server string, port int) *Quic {
-	return &Quic{ctx: ctx, caCert: cacert, server: server, port: port}
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, server string, port int) *Quic {
+	return &Quic{ctx: ctx, lg: lg, caCert: cacert, server: server, port: port}
 }
 
 func getStream(ctx context.Context, s quic.Session, c chan common.NxtStream) {

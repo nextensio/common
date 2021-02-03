@@ -113,10 +113,11 @@ func main() {
 	if ip == nil {
 		panic("Cannot find my ip")
 	}
-	e := ethernet.NewClient(mainCtx, intf, nhop)
+	lg := log.New(os.Stdout, "test", 0)
+	e := ethernet.NewClient(mainCtx, lg, intf, nhop)
 	c := make(chan common.NxtStream)
 	e.Dial(c)
-	p := proxy.NewListener(e, ip)
+	p := proxy.NewListener(mainCtx, lg, e, ip)
 	go p.Listen(c)
 	for {
 		select {

@@ -3,6 +3,7 @@ package fd
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"testing"
@@ -105,7 +106,8 @@ func TestReadWrite(t *testing.T) {
 	mainCtx := context.Background()
 
 	nfd := createTun()
-	f := NewClient(mainCtx, uintptr(nfd))
+	lg := log.New(os.Stdout, "test", 0)
+	f := NewClient(mainCtx, lg, uintptr(nfd))
 	c := make(chan common.NxtStream)
 	f.Dial(c)
 
