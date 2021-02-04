@@ -16,3 +16,5 @@ require (
 	google.golang.org/protobuf v1.25.1-0.20201020201750-d3470999428b
 	gvisor.dev/gvisor v0.0.0-20201204040109-0ba39926c86f
 )
+
+replace gvisor.dev/gvisor v0.0.0-20201204040109-0ba39926c86f => github.com/gopakumarce/gvisor v0.0.0-20210204202007-9423ba904526
