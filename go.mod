@@ -1,8 +1,8 @@
 module gitlab.com/nextensio/common
 
-go 1.14
+go 1.15
 
-replace gvisor.dev/gvisor v0.0.0-20201204040109-0ba39926c86f => github.com/gopakumarce/gvisor v0.0.0-20210204205126-a701b2c097f1
+replace gvisor.dev/gvisor v0.0.0-20201204040109-0ba39926c86f => github.com/gopakumarce/gvisor v0.0.0-20210204210835-33f20b9aa84c
 
 require (
 	github.com/golang/protobuf v1.4.3
