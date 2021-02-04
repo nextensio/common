@@ -230,8 +230,9 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 			return
 		}
 		udp := gonet.NewUDPConn(ipstack, &wq, ep)
+		parsed := make(chan struct{})
 		proxy := &Proxy{
-			udp: udp,
+			udp: udp, parsed: parsed,
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}
