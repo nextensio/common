@@ -62,25 +62,25 @@ type text struct {
 // reader. And similarly the writer can write data which will get dressed
 // up with tcp/udp headers etc.. and get sent over the device
 type Proxy struct {
-	ctx       context.Context
-	lg        *log.Logger
-	deviceIP  net.IP
-	device    common.Transport
-	linkEP    *channel.Endpoint
-	tcp       *gonet.TCPConn
-	tcpParse  []byte
-	tcpParsed chan struct{}
-	tcpLen    int
-	tls       tls
-	http      text
-	udp       *gonet.UDPConn
-	sip       net.IP
-	sport     uint16
-	dip       net.IP
-	dport     uint16
-	service   string
-	closed    bool
-	hdr       *nxthdr.NxtHdr
+	ctx      context.Context
+	lg       *log.Logger
+	deviceIP net.IP
+	device   common.Transport
+	linkEP   *channel.Endpoint
+	tcp      *gonet.TCPConn
+	parse    []byte
+	parsed   chan struct{}
+	parseLen int
+	tls      tls
+	http     text
+	udp      *gonet.UDPConn
+	sip      net.IP
+	sport    uint16
+	dip      net.IP
+	dport    uint16
+	service  string
+	closed   bool
+	hdr      *nxthdr.NxtHdr
 }
 
 // These are tcp/udp packets coming in on a device/transport (like ethernet)
@@ -212,7 +212,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		parse := make([]byte, TCP_PARSE_SZ)
 		parsed := make(chan struct{})
 		proxy := &Proxy{
-			tcp: tcp, tcpParse: parse, tcpParsed: parsed, tcpLen: 0,
+			tcp: tcp, parse: parse, parsed: parsed, parseLen: 0,
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}
@@ -235,6 +235,9 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}
+		proxy.hdr = makeHdr(proxy)
+		// TODO: No idea how to parse udp yet !
+		close(proxy.parsed)
 		c <- common.NxtStream{Parent: uuid, Stream: proxy}
 	})
 	ipstack.SetTransportProtocolHandler(udp.ProtocolNumber, fwdUdp.HandlePacket)
@@ -301,23 +304,23 @@ func parseHTTP(p *Proxy, prev int) bool {
 	// set of three bytes, check if they are \n\r\n
 	found := false
 	end := 0
-	for i := prev; i < p.tcpLen; i++ {
+	for i := prev; i < p.parseLen; i++ {
 		if i-2 >= 0 {
-			if nlcrnl(p.tcpParse[i-2 : i+1]) {
+			if nlcrnl(p.parse[i-2 : i+1]) {
 				found = true
 				end = i + 1
 				break
 			}
 		}
-		if i-1 >= 0 && i+1 < p.tcpLen {
-			if nlcrnl(p.tcpParse[i-1 : i+2]) {
+		if i-1 >= 0 && i+1 < p.parseLen {
+			if nlcrnl(p.parse[i-1 : i+2]) {
 				found = true
 				end = i + 2
 				break
 			}
 		}
-		if i+2 < p.tcpLen {
-			if nlcrnl(p.tcpParse[i : i+3]) {
+		if i+2 < p.parseLen {
+			if nlcrnl(p.parse[i : i+3]) {
 				found = true
 				end = i + 3
 				break
@@ -325,7 +328,7 @@ func parseHTTP(p *Proxy, prev int) bool {
 		}
 	}
 	if found {
-		reader := bufio.NewReader(bytes.NewReader(p.tcpParse[0:end]))
+		reader := bufio.NewReader(bytes.NewReader(p.parse[0:end]))
 		req, err := http.ReadRequest(reader)
 		if err != nil {
 			p.http.notHttp = true
@@ -365,13 +368,13 @@ func parseTLS(p *Proxy) bool {
 		return false
 	}
 	// The first 5 bytes is what identifies TLS
-	if p.tcpLen < TLS_HDRLEN {
+	if p.parseLen < TLS_HDRLEN {
 		return false
 	}
-	t := int(p.tcpParse[0])
-	maj := int(p.tcpParse[1])
-	min := int(p.tcpParse[2])
-	l := (int(p.tcpParse[3]) << 8) | int(p.tcpParse[4])
+	t := int(p.parse[0])
+	maj := int(p.parse[1])
+	min := int(p.parse[2])
+	l := (int(p.parse[3]) << 8) | int(p.parse[4])
 	// Check if type is client hello (0x16)
 	// Check if version is 0300 or 0301 or 0302
 	// Check if hello fits in one buffer. Again, like we discussed in tcpParse(), if
@@ -381,12 +384,12 @@ func parseTLS(p *Proxy) bool {
 		return false
 	}
 	// Ok so we know its tls client hello, now we are just waiting to read all the hello bytes
-	if p.tcpLen != TLS_HDRLEN+l {
+	if p.parseLen != TLS_HDRLEN+l {
 		return false
 	}
 
 	var hello = tlsx.ClientHello{}
-	err := hello.Unmarshall(p.tcpParse[0:p.tcpLen])
+	err := hello.Unmarshall(p.parse[0:p.parseLen])
 	if err != nil {
 		p.tls.notTls = true
 		return false
@@ -404,9 +407,9 @@ func tcpParse(p *Proxy) {
 	for {
 		// Cant wait for ever to decide if its plain text http or if its tls SNI
 		p.tcp.SetReadDeadline(time.Now().Add(TCP_PARSE_TIMEOUT))
-		n, err := p.tcp.Read(p.tcpParse[p.tcpLen:])
-		prev := p.tcpLen
-		p.tcpLen += n
+		n, err := p.tcp.Read(p.parse[p.parseLen:])
+		prev := p.parseLen
+		p.parseLen += n
 		if parseTLS(p) || parseHTTP(p, prev) {
 			break
 		}
@@ -415,11 +418,11 @@ func tcpParse(p *Proxy) {
 			// ip address as the service name
 			break
 		}
-		if p.tcpLen == len(p.tcpParse) {
+		if p.parseLen == len(p.parse) {
 			// well, I am not sure if we can expect the client hello/http headers to
 			// fit in one TCP_PARSE_SZ buffer. If there are esoteric hellos/headers that need
 			// more space, we will need to come back here and increase the size of
-			// the tcpParse buf allocated to the Proxy
+			// the parse buf allocated to the Proxy
 			break
 		}
 	}
@@ -431,7 +434,7 @@ func tcpParse(p *Proxy) {
 	// Cancel the timeouts
 	p.tcp.SetReadDeadline(time.Time{})
 	// Parsing activity completed (succesfully or unsuccesfully)
-	close(p.tcpParsed)
+	close(p.parsed)
 }
 
 func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
@@ -440,14 +443,14 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	// try to figure out if its TLS and if so get the SNI field, or if its
 	// plain http we get the host field
 	select {
-	case <-p.tcpParsed:
+	case <-p.parsed:
 	}
 	// We have some data buffered as part of the tcp parsing, return that first
 	// and read the next set of data in the next call to Read()
-	if p.tcpLen != 0 {
-		n := p.tcpLen
-		p.tcpLen = 0
-		return p.hdr, net.Buffers{p.tcpParse[0:n]}, nil
+	if p.parseLen != 0 {
+		n := p.parseLen
+		p.parseLen = 0
+		return p.hdr, net.Buffers{p.parse[0:n]}, nil
 	}
 
 	var err error
