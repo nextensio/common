@@ -115,6 +115,11 @@ type Transport interface {
 	//
 	// MultiThreading Note: Read() for a transport is expected to be invoked only from one goroutine,
 	// Reading same transport from multiple goroutines will produce unexpected results
+	//
+	// NOTE: The Read() API should NOT return io.EOF along with non-zero bytes of data. The net.conn
+	// framework in go does allow that, but here we enforce that any non-nil error returned means
+	// that there is no valid data returned. So wherever we use Read() on net.Conn, we need to check
+	// for io.EOF and data len != 0, but with nextensio transport we dont need to check that
 	Read() (*nxthdr.NxtHdr, net.Buffers, *NxtError)
 
 	// Parameters:
