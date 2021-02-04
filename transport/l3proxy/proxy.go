@@ -451,7 +451,9 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if p.parseLen != 0 {
 		n := p.parseLen
 		p.parseLen = 0
-		return p.hdr, net.Buffers{p.parse[0:n]}, nil
+		buf := net.Buffers{p.parse[0:n]}
+		p.parse = nil
+		return p.hdr, buf, nil
 	}
 
 	var err error
