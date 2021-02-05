@@ -373,7 +373,7 @@ func wsEndpoint(h *WebStream, c chan common.NxtStream, w http.ResponseWriter, r 
 
 	s, e := upgrader.Upgrade(w, r, nil)
 	if e != nil {
-		log.Println("upgrade error", e)
+		h.lg.Println("upgrade error", e)
 		return
 	}
 	var session *webSession = &webSession{
@@ -408,7 +408,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 		}
 		err = server.ListenAndServeTLS("", "")
 		if err != nil {
-			log.Println("Http listen failed")
+			h.lg.Println("Http listen failed")
 			return
 		}
 	} else {
@@ -417,7 +417,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 		}
 		err := server.ListenAndServe()
 		if err != nil {
-			log.Println("Http listen failed", err)
+			h.lg.Println("Http listen failed", err)
 			return
 		}
 	}
@@ -464,7 +464,7 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 
 	s, _, err := dialer.Dial(u.String(), h.requestHeader)
 	if err != nil {
-		log.Println("Cannot dial websocket", addr, err)
+		h.lg.Println("Cannot dial websocket", addr, err)
 		return common.Err(common.CONNECTION_ERR, err)
 	}
 
