@@ -453,6 +453,7 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 			Certificates: []tls.Certificate{certificate},
 			RootCAs:      certPool,
 			ServerName:   h.serverName,
+			MinVersion:   tls.VersionTLS12,
 			//InsecureSkipVerify: true,
 		}
 		dialer.TLSClientConfig = tlsConf
