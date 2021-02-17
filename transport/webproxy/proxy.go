@@ -82,7 +82,10 @@ func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *htt
 		http.Error(w, s, http.StatusInternalServerError)
 		return
 	}
-	newP := Proxy{src: shost, sport: uint16(sport), lg: p.lg, dest: dhost, dport: uint16(dport), conn: conn}
+	// The proxy CONNECT request needs an OK response before anything further
+	httpOk := http.Response{StatusCode: 200, ProtoMajor: 1, ProtoMinor: 1}
+	httpOk.Write(conn)
+	newP := Proxy{src: shost, sport: uint16(sport), dest: dhost, dport: uint16(dport), conn: conn, lg: p.lg}
 	newP.hdr = makeHdr(&newP)
 	c <- common.NxtStream{Parent: uuid.New(), Stream: &newP}
 }
@@ -93,7 +96,10 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		Addr: addr,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodConnect {
-				w.WriteHeader(http.StatusOK)
+				// NOTE: DO NOT do any writes using the w http.ResponseWriter here, just
+				// hijack and write whatever we want (like http 200 ok) ourselves. Because
+				// if we use the response writer, then it also ends up reading from the
+				// connection and then we lose data before we hijack!
 				hijackHttp(p, c, w, r)
 			} else {
 				// We just support connect requests here, not sure when/why
