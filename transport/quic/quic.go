@@ -152,7 +152,7 @@ func (q *Quic) NewStream(hdr http.Header) common.Transport {
 	if err != nil {
 		return nil
 	}
-	return &Quic{ctx: q.ctx, session: q.session, stream: stream}
+	return &Quic{ctx: q.ctx, session: q.session, stream: stream, lg: q.lg}
 }
 
 func (q *Quic) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {

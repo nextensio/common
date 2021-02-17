@@ -533,7 +533,7 @@ func (h *WebStream) NewStream(hdr http.Header) common.Transport {
 	}
 	stream := WebStream{
 		rxData: rxData, txData: txData, sendClose: sendClose, streamClosed: streamClosed,
-		stream: sid, session: h.session,
+		stream: sid, session: h.session, lg: h.lg,
 	}
 	h.session.slock.Lock()
 	h.session.streams[sid] = &stream
