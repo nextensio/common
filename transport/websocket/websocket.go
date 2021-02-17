@@ -252,7 +252,7 @@ func closeAllStreams(session *webSession) {
 	session.slock.Unlock()
 }
 
-func sessionRead(ctx context.Context, session *webSession, c chan common.NxtStream) {
+func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c chan common.NxtStream) {
 	Suuid := uuid.New()
 	for {
 		sid, data, dtype, err := nxtRead(session)
@@ -271,7 +271,7 @@ func sessionRead(ctx context.Context, session *webSession, c chan common.NxtStre
 			streamClosed := make(chan struct{})
 			stream = &WebStream{
 				ctx: ctx, rxData: rxData, txData: txData, sendClose: sendClose, streamClosed: streamClosed,
-				stream: sid, session: session,
+				stream: sid, session: session, lg: lg,
 			}
 			session.slock.Lock()
 			session.streams[sid] = stream
@@ -382,7 +382,7 @@ func wsEndpoint(h *WebStream, c chan common.NxtStream, w http.ResponseWriter, r 
 		nextStream: 0,
 		streams:    make(map[uint64]*WebStream),
 	}
-	go sessionRead(h.ctx, session, c)
+	go sessionRead(h.ctx, h.lg, session, c)
 	go wsPing(session)
 }
 
@@ -483,7 +483,7 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 	h.session = session
 	h.stream = 0
 
-	go sessionRead(h.ctx, session, sChan)
+	go sessionRead(h.ctx, h.lg, session, sChan)
 	atomic.AddInt32(&session.nthreads, 1)
 	go streamWrite(h)
 

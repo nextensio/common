@@ -66,7 +66,7 @@ func (d *Dtls) Listen(c chan common.NxtStream) {
 			d.lg.Printf("Listen error %v", err)
 			continue
 		}
-		client := &Dtls{conn: conn.(*dtls.Conn)}
+		client := &Dtls{conn: conn.(*dtls.Conn), lg: d.lg}
 		c <- common.NxtStream{Parent: uuid.New(), Stream: client}
 	}
 }

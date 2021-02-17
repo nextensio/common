@@ -212,7 +212,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		parse := make([]byte, TCP_PARSE_SZ)
 		parsed := make(chan struct{})
 		proxy := &Proxy{
-			tcp: tcp, parse: parse, parsed: parsed, parseLen: 0,
+			lg: p.lg, tcp: tcp, parse: parse, parsed: parsed, parseLen: 0,
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}
@@ -232,7 +232,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		udp := gonet.NewUDPConn(ipstack, &wq, ep)
 		parsed := make(chan struct{})
 		proxy := &Proxy{
-			udp: udp, parsed: parsed,
+			lg: p.lg, udp: udp, parsed: parsed,
 			sip: net.IP(id.RemoteAddress).To4(), sport: id.RemotePort,
 			dip: net.IP(id.LocalAddress).To4(), dport: id.LocalPort,
 		}

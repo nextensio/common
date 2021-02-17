@@ -82,7 +82,7 @@ func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *htt
 		http.Error(w, s, http.StatusInternalServerError)
 		return
 	}
-	newP := Proxy{src: shost, sport: uint16(sport), dest: dhost, dport: uint16(dport), conn: conn}
+	newP := Proxy{src: shost, sport: uint16(sport), lg: p.lg, dest: dhost, dport: uint16(dport), conn: conn}
 	newP.hdr = makeHdr(&newP)
 	c <- common.NxtStream{Parent: uuid.New(), Stream: &newP}
 }

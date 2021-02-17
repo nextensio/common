@@ -61,7 +61,7 @@ func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, server string
 	return &Quic{ctx: ctx, lg: lg, caCert: cacert, server: server, port: port}
 }
 
-func getStream(ctx context.Context, s quic.Session, c chan common.NxtStream) {
+func getStream(ctx context.Context, lg *log.Logger, s quic.Session, c chan common.NxtStream) {
 	Suuid := uuid.New()
 	for {
 		stream, err := s.AcceptStream(context.Background())
@@ -69,7 +69,7 @@ func getStream(ctx context.Context, s quic.Session, c chan common.NxtStream) {
 			fmt.Println("GetStream failed", err)
 			return
 		}
-		transport := &Quic{ctx: ctx, session: s, stream: stream}
+		transport := &Quic{ctx: ctx, session: s, stream: stream, lg: lg}
 		c <- common.NxtStream{Parent: Suuid, Stream: transport}
 	}
 }
@@ -85,7 +85,7 @@ func (q *Quic) Listen(c chan common.NxtStream) {
 		if err != nil {
 			return
 		}
-		go getStream(q.ctx, sess, c)
+		go getStream(q.ctx, q.lg, sess, c)
 	}
 }
 
