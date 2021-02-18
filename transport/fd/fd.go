@@ -58,6 +58,17 @@ func (f *Fd) IsClosed() bool {
 	return f.closed
 }
 
+// To support close cascading, we need an asynchronous way of knowing that
+// this stream is closed - asychronous meaning that without anyone doing a
+// Read() or Write(), we should know that this stream is closed. Examples
+// are the websocket and http2 transports, those streaming protocols have
+// state machines that figure out a stream is closed, at which point that
+// information is cascaded. So if we need to support this, we need some way
+// of asynchronously knowing that this stream is closed
+func (f *Fd) CloseCascade(cascade common.Transport) {
+	panic("This stream does not support close cascading!")
+}
+
 func (f *Fd) NewStream(hdr http.Header) common.Transport {
 	panic("Fd has no streams!")
 }

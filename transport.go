@@ -104,6 +104,19 @@ type Transport interface {
 	// Is this stream closed ?
 	IsClosed() bool
 
+	// If this stream is closed, also close the stream mentioned in the parameter to this API.
+	// A typical I/O goroutine is as below
+	// go doIO() {
+	//     data = rx.Read()
+	//     tx.Write()
+	// }
+	// So here, the rx.Read() will block, and the goroutine will not know if the tx stream is
+	// closed. If the tx stream is closed, the entire goroutine should exit even if there is
+	// no further Rx data. This can be achieved by saying tx.CloseCascade(rx), so that if the
+	// tx stream's state machine finds it closed, it will also close rx and then the whole
+	// goroutine will unblock and exit
+	CloseCascade(Transport)
+
 	// Set timeout for read, the Read() call returns with a net.Timeout error after the timeout
 	SetReadDeadline(time.Time) *NxtError
 

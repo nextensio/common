@@ -76,6 +76,7 @@ type HttpStream struct {
 	sChan         chan common.NxtStream // unused
 	nthreads      int32
 	listener      *HttpStream
+	cascade       common.Transport
 }
 
 // clientUuidHdr: On the server, to be able to identify which streams come from the same client, we need to
@@ -448,6 +449,16 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 }
 
 func (h *HttpStream) Close() *common.NxtError {
+	// Ideally this cascade close needs to happen only if the Close() is coming from
+	// within the state machine here where the state machine decides to close the session.
+	// If a user manually calls Close, the user can manually remember that they have to
+	// cascade-close this session and do it themselves, but the semantics today is such
+	// that state machine or manual, we cascade close anyways. And that will remain to be
+	// the semantics because users are expecting that behaviour.
+	if h.cascade != nil {
+		h.cascade.Close()
+	}
+
 	// Closing a closed channel again will result in panic, hence having to use the closeLock
 	// if multiple people attempt close parallely
 	h.closeLock.Lock()
@@ -457,11 +468,16 @@ func (h *HttpStream) Close() *common.NxtError {
 		close(h.streamClosed)
 	}
 	h.closeLock.Unlock()
+
 	return nil
 }
 
 func (h *HttpStream) IsClosed() bool {
 	return h.closed
+}
+
+func (h *HttpStream) CloseCascade(cascade common.Transport) {
+	h.cascade = cascade
 }
 
 func (h *HttpStream) SetReadDeadline(time.Time) *common.NxtError {

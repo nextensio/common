@@ -99,6 +99,7 @@ type WebStream struct {
 	txData        chan nxtData
 	sendClose     chan bool
 	streamClosed  chan struct{}
+	cascade       common.Transport
 }
 
 func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int) *WebStream {
@@ -503,6 +504,17 @@ func (h *WebStream) Close() *common.NxtError {
 	if h.session == nil {
 		return nil
 	}
+
+	// Ideally this cascade close needs to happen only if the Close() is coming from
+	// within the state machine here where the state machine decides to close the session.
+	// If a user manually calls Close, the user can manually remember that they have to
+	// cascade-close this session and do it themselves, but the semantics today is such
+	// that state machine or manual, we cascade close anyways. And that will remain to be
+	// the semantics because users are expecting that behaviour.
+	if h.cascade != nil {
+		h.cascade.Close()
+	}
+
 	select {
 	case h.sendClose <- true:
 		return nil
@@ -513,6 +525,10 @@ func (h *WebStream) Close() *common.NxtError {
 
 func (h *WebStream) IsClosed() bool {
 	return h.closed
+}
+
+func (h *WebStream) CloseCascade(cascade common.Transport) {
+	h.cascade = cascade
 }
 
 func (h *WebStream) SetReadDeadline(time.Time) *common.NxtError {
