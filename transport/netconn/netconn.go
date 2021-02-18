@@ -65,7 +65,7 @@ func (n *NetConn) CloseCascade(cascade common.Transport) {
 }
 
 func (n *NetConn) NewStream(hdr http.Header) common.Transport {
-	panic("Fd has no streams!")
+	panic("NetConn has no streams!")
 }
 
 func (n *NetConn) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
@@ -73,7 +73,7 @@ func (n *NetConn) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 		return common.Err(common.CONNECTION_ERR, nil)
 	}
 	for _, b := range buf {
-		// fd is assumed to be blocking, so it has to write all thats asked to be written
+		// net.conn is assumed to be blocking, so it has to write all thats asked to be written
 		_, err := n.conn.Write(b)
 		if err != nil {
 			return common.Err(common.CONNECTION_ERR, err)
@@ -82,8 +82,6 @@ func (n *NetConn) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	return nil
 }
 
-// Read the packet, strip ethernet headers and send it to the reader. Send
-// only the ipv4 packets to the reader
 func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if n.closed {
 		return nil, nil, common.Err(common.CONNECTION_ERR, nil)

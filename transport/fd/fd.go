@@ -88,8 +88,6 @@ func (f *Fd) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	return nil
 }
 
-// Read the packet, strip ethernet headers and send it to the reader. Send
-// only the ipv4 packets to the reader
 func (f *Fd) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if f.closed {
 		return nil, nil, common.Err(common.CONNECTION_ERR, nil)
