@@ -77,6 +77,8 @@ type HttpStream struct {
 	nthreads      int32
 	listener      *HttpStream
 	cascade       common.Transport
+	client        *http.Client
+	addr          string
 }
 
 // clientUuidHdr: On the server, to be able to identify which streams come from the same client, we need to
@@ -86,6 +88,7 @@ func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []by
 	return &HttpStream{
 		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		clientUuidHdr: clientUuidHdr,
+		addr:          ":" + strconv.Itoa(port),
 	}
 }
 
@@ -97,6 +100,44 @@ func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName st
 		streamClosed:  make(chan struct{}),
 	}
 	h.txData = httpBody{h: &h, txChan: make(chan nxtData)}
+
+	h.client = &http.Client{}
+	if len(h.caCert) != 0 {
+		h.addr = "https://" + h.serverIP + ":" + strconv.Itoa(h.port)
+		certificate, err := selfsign.GenerateSelfSignedWithDNS(h.serverName, h.serverName)
+		if err != nil {
+			return nil
+		}
+		rootCertificate, err := common.LoadCertificate(h.caCert)
+		if err != nil {
+			return nil
+		}
+		certPool := x509.NewCertPool()
+		cert, err := x509.ParseCertificate(rootCertificate.Certificate[0])
+		if err != nil {
+			return nil
+		}
+		certPool.AddCert(cert)
+		tlsConf := &tls.Config{
+			Certificates: []tls.Certificate{certificate},
+			RootCAs:      certPool,
+			ServerName:   h.serverName,
+			NextProtos:   []string{http2.NextProtoTLS},
+		}
+		h.client.Transport = &http2.Transport{
+			TLSClientConfig: tlsConf,
+		}
+	} else {
+		h.addr = "http://" + h.serverIP + ":" + strconv.Itoa(h.port)
+		h.client.Transport = &http2.Transport{
+			// So http2.Transport doesn't complain the URL scheme isn't 'https'
+			AllowHTTP: true,
+			// Pretend we are dialing a TLS endpoint.
+			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+				return net.Dial(network, addr)
+			},
+		}
+	}
 	return &h
 }
 
@@ -280,46 +321,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 // from server to client as of today. The sChan is only useful in notifying
 // client about new streams initiated from server
 func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
-
-	client := &http.Client{}
-	var addr string
-	if len(h.caCert) != 0 {
-		addr = "https://" + h.serverIP + ":" + strconv.Itoa(h.port)
-		certificate, err := selfsign.GenerateSelfSignedWithDNS(h.serverName, h.serverName)
-		if err != nil {
-			return common.Err(common.GENERAL_ERR, err)
-		}
-		rootCertificate, err := common.LoadCertificate(h.caCert)
-		if err != nil {
-			return common.Err(common.GENERAL_ERR, err)
-		}
-		certPool := x509.NewCertPool()
-		cert, err := x509.ParseCertificate(rootCertificate.Certificate[0])
-		if err != nil {
-			return common.Err(common.GENERAL_ERR, err)
-		}
-		certPool.AddCert(cert)
-		tlsConf := &tls.Config{
-			Certificates: []tls.Certificate{certificate},
-			RootCAs:      certPool,
-			ServerName:   h.serverName,
-			//InsecureSkipVerify: true,
-		}
-		client.Transport = &http2.Transport{
-			TLSClientConfig: tlsConf,
-		}
-	} else {
-		addr = "http://" + h.serverIP + ":" + strconv.Itoa(h.port)
-		client.Transport = &http2.Transport{
-			// So http2.Transport doesn't complain the URL scheme isn't 'https'
-			AllowHTTP: true,
-			// Pretend we are dialing a TLS endpoint.
-			DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
-				return net.Dial(network, addr)
-			},
-		}
-	}
-	req, err := http.NewRequest("POST", addr, &h.txData)
+	req, err := http.NewRequest("POST", h.addr, &h.txData)
 	if err != nil {
 		return common.Err(common.CONNECTION_ERR, err)
 	}
@@ -342,7 +344,7 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 	// stream, we dont care about the response at all
 	atomic.AddInt32(&h.nthreads, 1)
 	go func(h *HttpStream) {
-		resp, err := client.Do(req)
+		resp, err := h.client.Do(req)
 		if err == nil {
 			// TODO: Not sure if the http2 lib also does a Body.Close() for any reason
 			// and if so this will be a multi threaded operation, and we have to find out
@@ -499,11 +501,18 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 			}
 		}
 	}
-	nh := NewClient(h.ctx, h.lg, h.caCert, h.serverName, h.serverIP, h.port, hdr)
+	nh := HttpStream{
+		ctx: h.ctx, lg: h.lg, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
+		requestHeader: h.requestHeader,
+		streamClosed:  make(chan struct{}),
+	}
+	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
+	nh.addr = h.addr
+	nh.client = h.client
 	if nh.Dial(h.sChan) != nil {
 		return nil
 	}
-	return nh
+	return &nh
 }
 
 func (h *HttpStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
