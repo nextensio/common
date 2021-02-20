@@ -246,6 +246,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 }
 
 func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, r *http.Request) {
+	if r.ProtoMajor != 2 {
+		panic("We are expecting http2 with prior knowledge")
+	}
 	client := r.Header.Get(h.clientUuidHdr)
 	if client == "" {
 		http.Error(w, "No header "+h.clientUuidHdr, http.StatusInternalServerError)
