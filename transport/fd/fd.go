@@ -8,10 +8,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"gitlab.com/nextensio/common"
 	"gitlab.com/nextensio/common/messages/nxthdr"
+	"golang.org/x/net/ipv6"
+	"golang.org/x/sys/unix"
 )
 
 // fd implements a raw packet device thats a file descriptor - it can be for example
@@ -77,7 +80,18 @@ func (f *Fd) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	if f.closed {
 		return common.Err(common.CONNECTION_ERR, nil)
 	}
+
 	for _, b := range buf {
+		// IOS tun implementation appends a 4-bytes protocol information header
+		// to each packet. IFF_NO_PI option can prevent this.
+		if runtime.GOOS == "darwin" {
+			pktInfo := []byte{0x0, 0x0, 0x0, unix.AF_INET}
+			if b[0]>>4 == ipv6.Version {
+				pktInfo[3] = unix.AF_INET6
+			}
+			b = append(pktInfo, b...)
+		}
+
 		// fd is assumed to be blocking, so it has to write all thats asked to be written
 		n, err := f.f.Write(b)
 		if err != nil {
@@ -92,6 +106,7 @@ func (f *Fd) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if f.closed {
 		return nil, nil, common.Err(common.CONNECTION_ERR, nil)
 	}
+
 	buf := make([]byte, common.MAXBUF)
 	n, err := f.f.Read(buf)
 	if err != nil {
@@ -99,7 +114,14 @@ func (f *Fd) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 			return nil, nil, common.Err(common.CONNECTION_ERR, err)
 		}
 	}
-	return nil, net.Buffers{buf[0:n]}, nil
+
+	// IOS tun implementation appends a 4-bytes protocol information header
+	// to each packet. IFF_NO_PI option can prevent this.
+	if runtime.GOOS == "darwin" {
+		return nil, net.Buffers{buf[4:n]}, nil
+	} else {
+		return nil, net.Buffers{buf[0:n]}, nil
+	}
 }
 
 func (f *Fd) SetReadDeadline(t time.Time) *common.NxtError {
