@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"time"
 
 	"gitlab.com/nextensio/common"
@@ -34,12 +33,13 @@ import (
 type Fd struct {
 	lg     *log.Logger
 	f      *os.File
+	p      int /* os platform: android = 0, apple = 1 */
 	closed bool
 }
 
-func NewClient(ctx context.Context, lg *log.Logger, fd uintptr) *Fd {
+func NewClient(ctx context.Context, osplat int, lg *log.Logger, fd uintptr) *Fd {
 	f := os.NewFile(fd, "pipe")
-	return &Fd{lg: lg, f: f}
+	return &Fd{lg: lg, f: f, p: osplat}
 }
 
 func (f *Fd) Listen(c chan common.NxtStream) {
@@ -84,7 +84,7 @@ func (f *Fd) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	for _, b := range buf {
 		// IOS tun implementation appends a 4-bytes protocol information header
 		// to each packet. IFF_NO_PI option can prevent this.
-		if runtime.GOOS == "darwin" {
+		if f.p == 1 /* darwin (apple) */ {
 			pktInfo := []byte{0x0, 0x0, 0x0, unix.AF_INET}
 			if b[0]>>4 == ipv6.Version {
 				pktInfo[3] = unix.AF_INET6
@@ -117,7 +117,7 @@ func (f *Fd) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 
 	// IOS tun implementation appends a 4-bytes protocol information header
 	// to each packet. IFF_NO_PI option can prevent this.
-	if runtime.GOOS == "darwin" {
+	if f.p == 1 /* darwin (apple) */ {
 		return nil, net.Buffers{buf[4:n]}, nil
 	} else {
 		return nil, net.Buffers{buf[0:n]}, nil
