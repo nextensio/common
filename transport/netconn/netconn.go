@@ -45,7 +45,9 @@ func (n *NetConn) Dial(sChan chan common.NxtStream) *common.NxtError {
 
 func (n *NetConn) Close() *common.NxtError {
 	if n.IsClosed() == false {
-		n.conn.Close()
+		if n.conn != nil {
+			n.conn.Close()
+		}
 		n.closed = true
 	}
 	return nil

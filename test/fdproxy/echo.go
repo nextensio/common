@@ -72,7 +72,7 @@ func main() {
 	mainCtx := context.Background()
 	nfd := createTun()
 	lg := log.New(os.Stdout, "test", 0)
-	f := fd.NewClient(mainCtx, lg, uintptr(nfd))
+	f := fd.NewClient(mainCtx, 0, lg, uintptr(nfd))
 	c := make(chan common.NxtStream)
 	f.Dial(c)
 	p := proxy.NewListener(mainCtx, lg, f, net.ParseIP("1.1.1.1"))
