@@ -16,8 +16,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/protobuf/proto"

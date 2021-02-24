@@ -8,9 +8,9 @@ import (
 	"os"
 	"unsafe"
 
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/transport/fd"
-	proxy "gitlab.com/nextensio/common/transport/l3proxy"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/transport/fd"
+	proxy "gitlab.com/nextensio/common/go/transport/l3proxy"
 	"golang.org/x/sys/unix"
 )
 

@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/transport/ethernet"
-	proxy "gitlab.com/nextensio/common/transport/l3proxy"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/transport/ethernet"
+	proxy "gitlab.com/nextensio/common/go/transport/l3proxy"
 )
 
 func defaultIntf() (string, net.IP) {

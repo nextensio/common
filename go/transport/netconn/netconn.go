@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
 // NetConn dresses up a golang net.Conn as a common.Transport.

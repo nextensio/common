@@ -10,8 +10,8 @@ import (
 	"os"
 	"time"
 
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
 )

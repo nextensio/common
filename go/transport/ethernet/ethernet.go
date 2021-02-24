@@ -14,8 +14,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/afpacket"
 	"github.com/google/gopacket/layers"
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
 const (

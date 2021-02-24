@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 
 	"github.com/google/gopacket"
 	"github.com/google/uuid"

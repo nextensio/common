@@ -13,8 +13,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gopakumarce/tlsx"
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	"gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
