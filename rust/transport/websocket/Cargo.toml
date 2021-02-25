@@ -1,0 +1,10 @@
+[package]
+name = "websock"
+version = "0.1.0"
+authors = ["Nextensio <team@nextensio.net>"]
+edition = "2018"
+
+[dependencies]
+tungstenite = "0.13.0"
+common = { path = "../../common" }
+
