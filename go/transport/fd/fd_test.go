@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"gitlab.com/nextensio/common"
+	common "gitlab.com/nextensio/common/go"
 	"golang.org/x/sys/unix"
 )
 

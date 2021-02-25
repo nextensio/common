@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"gitlab.com/nextensio/common"
-	"gitlab.com/nextensio/common/messages/nxthdr"
+	common "gitlab.com/nextensio/common/go"
+	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
 // To try this proxy, do "go test" and then say the below for example

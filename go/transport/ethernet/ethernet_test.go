@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"gitlab.com/nextensio/common"
+	common "gitlab.com/nextensio/common/go"
 )
 
 // NOTE: The af-packet stuff here needs sudo permissions to run. It can be run as below
