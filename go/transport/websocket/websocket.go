@@ -197,11 +197,13 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 	_, err = nbuf.WriteTo(w)
 	if err != nil {
 		stream.session.wlock.Unlock()
+		stream.lg.Println("Stream write error", stream.stream, err)
 		return common.Err(common.GENERAL_ERR, err)
 	}
 	err = w.Close()
 	if err != nil {
 		stream.session.wlock.Unlock()
+		stream.lg.Println("Stream write close error", stream.stream, err)
 		return common.Err(common.GENERAL_ERR, err)
 	}
 	stream.session.wlock.Unlock()
@@ -258,6 +260,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 	for {
 		sid, data, dtype, err := nxtRead(session)
 		if err != nil {
+			lg.Println("Session read error", err)
 			closeAllStreams(session)
 			session.conn.Close()
 			return
