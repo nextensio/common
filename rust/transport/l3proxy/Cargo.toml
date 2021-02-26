@@ -1,0 +1,9 @@
+[package]
+name = "l3proxy"
+version = "0.1.0"
+authors = ["Nextensio <team@nextensio.net>"]
+edition = "2018"
+
+[dependencies]
+smoltcp = { git = "https://github.com/gopakumarce/smoltcp.git", branch = "gopa-smoltcp", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }
+common = { path = "../../common" }
