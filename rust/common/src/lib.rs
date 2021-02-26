@@ -1,15 +1,18 @@
+use std::path::StripPrefixError;
+
 pub enum NxtErr {
     GENERAL_ERR,
     CONNECTION_ERR,
 }
 pub struct NxtError {
     pub code: NxtErr,
+    pub detail: String,
 }
 
 pub struct NxtHdr {}
 
 pub trait Transport {
-    fn Dial(&mut self);
+    fn Dial(&mut self) -> Result<(), NxtError>;
     fn NewStream(&mut self) -> u64;
     fn Close(&mut self, stream: u64) -> Result<(), NxtError>;
     fn IsClosed(&self, stream: u64) -> bool;
