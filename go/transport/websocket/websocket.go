@@ -268,7 +268,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 		session.slock.Lock()
 		var stream *WebStream = session.streams[sid]
 		session.slock.Unlock()
-		if stream == nil {
+		if stream == nil && dtype != streamClose {
 			rxData := make(chan nxtData, dataQlen)
 			txData := make(chan nxtData, dataQlen)
 			sendClose := make(chan bool)
@@ -300,13 +300,21 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 			case <-stream.streamClosed:
 			}
 		case streamClose:
-			stream.Close()
-			// We delete the stream from the hashmap. Close must be the last message on this stream,
-			// since we do not want this to be created again by another packet that comes after this
-			// with a closed stream id
-			session.slock.Lock()
-			delete(session.streams, sid)
-			session.slock.Unlock()
+			if stream != nil {
+				stream.Close()
+				// We delete the stream from the hashmap. Close must be the last message on this stream,
+				// since we do not want this to be created again by another packet that comes after this
+				// with a closed stream id
+				session.slock.Lock()
+				delete(session.streams, sid)
+				session.slock.Unlock()
+			}
+			if sid == 0 {
+				// stream 0 represents the session itself, if stream 0 is closed, then entire session is closed
+				closeAllStreams(session)
+				session.conn.Close()
+				return
+			}
 		case streamWindow:
 			//TODO: we got a window update, use this to control when the transmit side can send data
 		}

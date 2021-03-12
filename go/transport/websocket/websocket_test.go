@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
@@ -314,18 +314,18 @@ func Test2ClientStreams(t *testing.T) {
 	}
 
 	// Each stream close should get the stream hashmap len down by one
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		cast := streams[i].(*WebStream)
 		castS := serverStream[0].(*WebStream)
 		sthreads := castS.session.nthreads - 1
 		cthreads := cast.session.nthreads - 1
 		streams[i].Close()
-		for getStreamsLen(cast.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for client stream count to", 9-i)
+		for getStreamsLen(cast.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for client stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
-		for getStreamsLen(castS.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for stream count to", 9-i)
+		for getStreamsLen(castS.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
 		for castS.session.nthreads != sthreads {
@@ -339,7 +339,7 @@ func Test2ClientStreams(t *testing.T) {
 	}
 
 	// all streams are closed, now a read/write should return error
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
 		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
 		if err == nil {
@@ -357,6 +357,16 @@ func Test2ClientStreams(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
+	}
+	// stream 0 close should close the entire session
+	streams[0].Close()
+	_, _, err := streams[0].Read()
+	if err == nil {
+		panic(err)
+	}
+	_, _, err = serverStream[0].Read()
+	if err == nil {
+		panic(err)
 	}
 
 	fmt.Print("Waiting for all goroutines to go away\n")
@@ -408,18 +418,18 @@ func Test3ClientStreamServerClose(t *testing.T) {
 	}
 
 	// Each stream close should get the stream hashmap len down by one
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		cast := streams[i].(*WebStream)
 		castS := serverStream[0].(*WebStream)
 		sthreads := castS.session.nthreads - 1
 		cthreads := cast.session.nthreads - 1
 		serverStream[i].Close()
-		for getStreamsLen(cast.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for client stream count to", 9-i)
+		for getStreamsLen(cast.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for client stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
-		for getStreamsLen(castS.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for stream count to", 9-i)
+		for getStreamsLen(castS.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
 		for castS.session.nthreads != sthreads {
@@ -433,7 +443,7 @@ func Test3ClientStreamServerClose(t *testing.T) {
 	}
 
 	// all streams are closed, now a read/write should return error
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
 		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
 		if err == nil {
@@ -451,6 +461,16 @@ func Test3ClientStreamServerClose(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
+	}
+	// stream 0 close should close the entire session
+	streams[0].Close()
+	_, _, err := streams[0].Read()
+	if err == nil {
+		panic(err)
+	}
+	_, _, err = serverStream[0].Read()
+	if err == nil {
+		panic(err)
 	}
 
 	fmt.Print("Waiting for all goroutines to go away\n")
@@ -528,18 +548,18 @@ func Test4ServerStreams(t *testing.T) {
 	}
 
 	// Each stream close should get the stream hashmap len down by one
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		cast := streams[i].(*WebStream)
 		castS := wsock.(*WebStream)
 		sthreads := castS.session.nthreads - 1
 		cthreads := cast.session.nthreads - 1
 		streams[i].Close()
-		for getStreamsLen(cast.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for client stream count to", 9-i)
+		for getStreamsLen(cast.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for client stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
-		for getStreamsLen(castS.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for stream count to", 9-i)
+		for getStreamsLen(castS.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
 		for castS.session.nthreads != sthreads {
@@ -553,7 +573,7 @@ func Test4ServerStreams(t *testing.T) {
 	}
 
 	// all streams are closed, now a read/write should return error
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
 		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
 		if err == nil {
@@ -571,6 +591,16 @@ func Test4ServerStreams(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
+	}
+	// stream 0 close should close the entire session
+	streams[0].Close()
+	_, _, err := streams[0].Read()
+	if err == nil {
+		panic(err)
+	}
+	_, _, err = serverStream[0].Read()
+	if err == nil {
+		panic(err)
 	}
 
 	fmt.Print("Waiting for all goroutines to go away\n")
@@ -633,18 +663,18 @@ func Test5ServerStreamsClientClose(t *testing.T) {
 	}
 
 	// Each stream close should get the stream hashmap len down by one
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		cast := streams[i].(*WebStream)
 		castS := wsock.(*WebStream)
 		sthreads := castS.session.nthreads - 1
 		cthreads := cast.session.nthreads - 1
 		clientStream[i].Close()
-		for getStreamsLen(cast.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for client stream count to", 9-i)
+		for getStreamsLen(cast.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for client stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
-		for getStreamsLen(castS.session) != 9-i {
-			fmt.Println("Stream", i, "Waiting for stream count to", 9-i)
+		for getStreamsLen(castS.session) != 10-i {
+			fmt.Println("Stream", i, "Waiting for stream count to", 10-i)
 			time.Sleep(1 * time.Millisecond)
 		}
 		for castS.session.nthreads != sthreads {
@@ -658,7 +688,7 @@ func Test5ServerStreamsClientClose(t *testing.T) {
 	}
 
 	// all streams are closed, now a read/write should return error
-	for i := 0; i < 10; i++ {
+	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
 		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
 		if err == nil {
@@ -676,6 +706,16 @@ func Test5ServerStreamsClientClose(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
+	}
+	// stream 0 close should close the entire session
+	streams[0].Close()
+	_, _, err := streams[0].Read()
+	if err == nil {
+		panic(err)
+	}
+	_, _, err = serverStream[0].Read()
+	if err == nil {
+		panic(err)
 	}
 
 	fmt.Print("Waiting for all goroutines to go away\n")

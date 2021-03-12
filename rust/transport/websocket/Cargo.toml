@@ -4,8 +4,19 @@ version = "0.1.0"
 authors = ["Nextensio <team@nextensio.net>"]
 edition = "2018"
 
+# Bloody android uses BoringSSL as their library and does not provide it as a shared lib,
+# so we are forced to bundle in all of openssl here. native-tls works well on 
+# ios/macos/linux-laptop/windows by using the system given native tls library, so that 
+# helps us reduce the binary size. So android will be bloated
+[target.'cfg(target_os = "android")'.dependencies]
+native-tls = {version = "0.2", features = ["vendored"]}
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+native-tls = "0.2"
+
 [dependencies]
 tungstenite = "0.13.0"
-url = "2.1.0"
+prost = "0.7"
+http = "0.2"
+mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
 common = { path = "../../common" }
-
