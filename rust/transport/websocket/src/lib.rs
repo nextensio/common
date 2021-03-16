@@ -142,12 +142,13 @@ impl common::Transport for WebSession {
     }
 
     fn new_stream(&mut self) -> u64 {
-        let sid;
+        // fetch_add returns the OLD value
+        let mut sid = self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
         // server has odd number streamids and client is even, just to prevent overlap
         if self.server {
-            sid = 2 * self.next_stream.fetch_add(1, Ordering::Relaxed) + 1;
+            sid = 2 * sid + 1;
         } else {
-            sid = 2 * self.next_stream.fetch_add(1, Ordering::Relaxed);
+            sid = 2 * sid;
         }
         let stream = WebStream {};
         self.streams.insert(sid, stream);
