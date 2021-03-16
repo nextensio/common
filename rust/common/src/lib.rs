@@ -217,7 +217,7 @@ pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
     return Some(key);
 }
 
-pub fn key_to_hdr(key: FlowV4Key) -> NxtHdr {
+pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
     let dest = Ipv4Addr::new(
         ((key.dip >> 24) & 0xFF) as u8,
         ((key.dip >> 16) & 0xFF) as u8,
