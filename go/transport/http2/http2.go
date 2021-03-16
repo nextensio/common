@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -506,7 +506,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 	}
 	nh := HttpStream{
 		ctx: h.ctx, lg: h.lg, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
-		requestHeader: h.requestHeader,
+		requestHeader: hdr,
 		streamClosed:  make(chan struct{}),
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
