@@ -31,6 +31,28 @@ impl Clone for FlowV4Key {
     }
 }
 
+impl fmt::Display for FlowV4Key {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dest = Ipv4Addr::new(
+            ((self.dip >> 24) & 0xFF) as u8,
+            ((self.dip >> 16) & 0xFF) as u8,
+            ((self.dip >> 8) & 0xFF) as u8,
+            (self.dip & 0xFF) as u8,
+        );
+        let src = Ipv4Addr::new(
+            ((self.sip >> 24) & 0xFF) as u8,
+            ((self.sip >> 16) & 0xFF) as u8,
+            ((self.sip >> 8) & 0xFF) as u8,
+            (self.sip & 0xFF) as u8,
+        );
+        write!(
+            f,
+            "src: {}, sport: {}, dst: {}, dport: {}, proto: {}",
+            src, self.sport, dest, self.dport, self.proto
+        )
+    }
+}
+
 #[derive(Copy, Clone)]
 pub enum NxtErr {
     GENERAL,
