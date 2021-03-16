@@ -121,9 +121,6 @@ impl common::Transport for WebSession {
         tls.add_root_certificate(cert);
         let connector = tls.build().unwrap();
         let stream = std::net::TcpStream::connect(svr)?;
-        if self.nonblocking {
-            stream.set_nonblocking(true)?;
-        }
         let connected_stream = connector.connect(&self.server_name, stream.try_clone()?)?;
         let socket = match tungstenite::client(request.body(()).unwrap(), connected_stream) {
             Ok((s, _)) => s,
