@@ -13,7 +13,7 @@ use smoltcp::{
     phy::packetq::PacketQ, phy::Medium, socket::SocketHandle, socket::SocketRef, socket::SocketSet,
 };
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::net::Ipv4Addr;
 
 // NOTE: See pub enum ManagedSlice in slice.rs in the smoltcp code,
 // the lifetime here is for the 'Borrowed' variant of that enum in
@@ -51,13 +51,9 @@ impl<'a> Socket<'a> {
             socket.bind(tuple.dport).unwrap();
             handle = onesock.add(socket);
         }
-        let dest = IpAddress::v4(
-            ((tuple.dip >> 24) & 0xFF) as u8,
-            ((tuple.dip >> 16) & 0xFF) as u8,
-            ((tuple.dip >> 8) & 0xFF) as u8,
-            (tuple.dip & 0xFF) as u8,
-        );
-
+        let dest: Ipv4Addr = tuple.dip.parse().unwrap();
+        let octets = dest.octets();
+        let dest = IpAddress::v4(octets[0], octets[1], octets[2], octets[3]);
         Socket {
             onesock,
             closed: false,

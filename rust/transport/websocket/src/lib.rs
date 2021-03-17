@@ -6,9 +6,9 @@ use http::Request;
 use mio::{Interest, Poll, Token};
 use native_tls::{Certificate, TlsConnector, TlsStream};
 use prost::Message;
+use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, u64};
-use std::{io::Cursor, time::Duration};
 use tungstenite::WebSocket;
 
 // The format of the data that gets packed in a websocket is as below

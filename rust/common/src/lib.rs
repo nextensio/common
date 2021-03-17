@@ -2,7 +2,7 @@ use etherparse::InternetSlice::*;
 use etherparse::SlicedPacket;
 use etherparse::TransportSlice::*;
 use mio::{Poll, Token};
-use std::{collections::VecDeque, fmt, net::Ipv4Addr, time::Duration};
+use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 
 pub mod nxthdr {
     include!(concat!(env!("OUT_DIR"), "/nxthdr.rs"));
@@ -18,27 +18,25 @@ pub const UDP: usize = 17;
 pub struct FlowV4Key {
     pub sip: u32,
     pub sport: u16,
-    pub dip: u32,
+    pub dip: String,
     pub dport: u16,
     pub proto: usize,
 }
 
-impl Copy for FlowV4Key {}
-
 impl Clone for FlowV4Key {
     fn clone(&self) -> FlowV4Key {
-        *self
+        FlowV4Key {
+            sip: self.sip,
+            sport: self.sport,
+            dip: self.dip.clone(),
+            dport: self.dport,
+            proto: self.proto,
+        }
     }
 }
 
 impl fmt::Display for FlowV4Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dest = Ipv4Addr::new(
-            ((self.dip >> 24) & 0xFF) as u8,
-            ((self.dip >> 16) & 0xFF) as u8,
-            ((self.dip >> 8) & 0xFF) as u8,
-            (self.dip & 0xFF) as u8,
-        );
         let src = Ipv4Addr::new(
             ((self.sip >> 24) & 0xFF) as u8,
             ((self.sip >> 16) & 0xFF) as u8,
@@ -48,7 +46,7 @@ impl fmt::Display for FlowV4Key {
         write!(
             f,
             "src: {}, sport: {}, dst: {}, dport: {}, proto: {}",
-            src, self.sport, dest, self.dport, self.proto
+            src, self.sport, self.dip, self.dport, self.proto
         )
     }
 }
@@ -231,7 +229,8 @@ pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
             match value.ip {
                 Some(Ipv4(value)) => {
                     key.sip = as_u32_be(&value.source_addr().octets());
-                    key.dip = as_u32_be(&value.destination_addr().octets());
+                    let octets = &value.destination_addr().octets();
+                    key.dip = Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]).to_string();
                 }
                 _ => return None,
             }
@@ -255,12 +254,6 @@ pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
 }
 
 pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
-    let dest = Ipv4Addr::new(
-        ((key.dip >> 24) & 0xFF) as u8,
-        ((key.dip >> 16) & 0xFF) as u8,
-        ((key.dip >> 8) & 0xFF) as u8,
-        (key.dip & 0xFF) as u8,
-    );
     let src = Ipv4Addr::new(
         ((key.sip >> 24) & 0xFF) as u8,
         ((key.sip >> 16) & 0xFF) as u8,
@@ -270,7 +263,7 @@ pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
 
     let mut flow: NxtFlow = NxtFlow::default();
     flow.proto = key.proto as u32;
-    flow.dest = dest.to_string();
+    flow.dest = key.dip.clone();
     flow.dport = key.dport as u32;
     flow.source = src.to_string();
     flow.sport = key.sport as u32;

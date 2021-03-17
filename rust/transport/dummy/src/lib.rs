@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use common::{NxtBufs, NxtErr, NxtError};
 
 pub struct Dummy {

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use common::{NxtBufs, NxtErr, NxtError, RegType, HEADROOM, MAXBUF};
 use libc::c_void;
 use mio::unix::SourceFd;

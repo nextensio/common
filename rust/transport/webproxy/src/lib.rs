@@ -3,8 +3,13 @@ use mio::{Interest, Poll, Token};
 
 pub struct WebProxy {
     closed: bool,
-    port: usize,
+    sip: u32,
+    sport: usize,
+    dip: String,
+    dport: usize,
     socket: Option<RawStream>,
+    connect_buf: Option<Vec<u8>>,
+    connect_parsed: bool,
 }
 
 // this is a non-blocking version, there is no option for this to work in a
@@ -13,8 +18,13 @@ impl WebProxy {
     fn new_client(port: usize) -> WebProxy {
         WebProxy {
             closed: false,
-            port,
+            sip: 0,
+            sport: port,
+            dip: "".to_string(),
+            dport: 0,
             socket: None,
+            connect_buf: None,
+            connect_parsed: false,
         }
     }
 }
@@ -22,7 +32,7 @@ impl WebProxy {
 impl common::Transport for WebProxy {
     fn listen(&mut self) -> Result<Box<dyn Transport>, NxtError> {
         if self.socket.is_none() {
-            let addr: std::net::SocketAddr = format!("0.0.0.0:{}", self.port).parse().unwrap();
+            let addr: std::net::SocketAddr = format!("0.0.0.0:{}", self.sport).parse().unwrap();
             let listener = mio::net::TcpListener::bind(addr)?;
             self.socket = Some(RawStream::TcpLis(listener));
         }
@@ -31,7 +41,12 @@ impl common::Transport for WebProxy {
                 Ok((stream, _)) => {
                     return Ok(Box::new(WebProxy {
                         closed: false,
-                        port: 0,
+                        sip: 0,
+                        sport: 0,
+                        dip: "".to_string(),
+                        dport: 0,
+                        connect_buf: None,
+                        connect_parsed: false,
                         socket: Some(RawStream::Tcp(stream)),
                     }));
                 }
