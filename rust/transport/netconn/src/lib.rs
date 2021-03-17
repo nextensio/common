@@ -38,7 +38,7 @@ impl common::Transport for NetConn {
     fn dial(&mut self) -> Result<(), NxtError> {
         if self.proto == common::TCP {
             let socket = SocketAddr::V4(SocketAddrV4::new(self.server, self.port as u16));
-            if self.nonblocking {
+            if !self.nonblocking {
                 let stream;
                 if self.connect_timeout.is_some() {
                     stream = TcpStream::connect_timeout(&socket, self.connect_timeout.unwrap())?;
