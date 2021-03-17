@@ -112,10 +112,26 @@ impl common::Transport for WebSession {
             request = request.header(k, v);
         }
 
-        let cert = Certificate::from_pem(&self.ca_cert).unwrap();
+        let cert = match Certificate::from_pem(&self.ca_cert) {
+            Err(e) => {
+                return Err(NxtError {
+                    code: NxtErr::CONNECTION,
+                    detail: format!("{}", e),
+                });
+            }
+            Ok(c) => c,
+        };
         let mut tls = TlsConnector::builder();
         tls.add_root_certificate(cert);
-        let connector = tls.build().unwrap();
+        let connector = match tls.build() {
+            Err(e) => {
+                return Err(NxtError {
+                    code: NxtErr::CONNECTION,
+                    detail: format!("{}", e),
+                });
+            }
+            Ok(c) => c,
+        };
         let stream = std::net::TcpStream::connect(svr)?;
         let connected_stream = connector.connect(&self.server_name, stream.try_clone()?)?;
         let socket = match tungstenite::client(request.body(()).unwrap(), connected_stream) {
