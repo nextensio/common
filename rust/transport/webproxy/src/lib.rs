@@ -1,12 +1,12 @@
-use common::{NxtBufs, NxtErr, NxtError, RawStream, RegType, Transport};
+use common::{as_u32_be, NxtBufs, NxtErr, NxtError, RawStream, RegType, Transport};
 use mio::{Interest, Poll, Token};
 
 pub struct WebProxy {
     closed: bool,
     sip: u32,
-    sport: usize,
+    sport: u16,
     dip: String,
-    dport: usize,
+    dport: u16,
     socket: Option<RawStream>,
     connect_buf: Option<Vec<u8>>,
     connect_parsed: bool,
@@ -19,7 +19,7 @@ impl WebProxy {
         WebProxy {
             closed: false,
             sip: 0,
-            sport: port,
+            sport: port as u16,
             dip: "".to_string(),
             dport: 0,
             socket: None,
@@ -38,17 +38,28 @@ impl common::Transport for WebProxy {
         }
         match self.socket.as_mut().unwrap() {
             RawStream::TcpLis(listener) => match listener.accept() {
-                Ok((stream, _)) => {
-                    return Ok(Box::new(WebProxy {
-                        closed: false,
-                        sip: 0,
-                        sport: 0,
-                        dip: "".to_string(),
-                        dport: 0,
-                        connect_buf: None,
-                        connect_parsed: false,
-                        socket: Some(RawStream::Tcp(stream)),
-                    }));
+                Ok((stream, addr)) => {
+                    match addr.ip() {
+                        std::net::IpAddr::V4(v4addr) => {
+                            return Ok(Box::new(WebProxy {
+                                closed: false,
+                                sip: as_u32_be(&v4addr.octets()),
+                                sport: addr.port(),
+                                dip: "".to_string(),
+                                dport: 0,
+                                connect_buf: None,
+                                connect_parsed: false,
+                                socket: Some(RawStream::Tcp(stream)),
+                            }));
+                        }
+                        _ => {
+                            // We only support ipv4 as of today
+                            return Err(NxtError {
+                                code: NxtErr::EWOULDBLOCK,
+                                detail: "".to_string(),
+                            });
+                        }
+                    }
                 }
 
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
