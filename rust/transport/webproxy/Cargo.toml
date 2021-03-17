@@ -1,0 +1,9 @@
+[package]
+name = "webproxy"
+version = "0.1.0"
+authors = ["Nextensio <team@nextensio.net>"]
+edition = "2018"
+
+[dependencies]
+mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
+common = { path = "../../common" }

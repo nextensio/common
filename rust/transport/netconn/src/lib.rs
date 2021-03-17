@@ -11,10 +11,17 @@ pub struct NetConn {
     proto: usize,
     stream: Option<RawStream>,
     nonblocking: bool,
+    connect_timeout: Option<Duration>,
 }
 
 impl NetConn {
-    pub fn new_client(server: Ipv4Addr, port: usize, proto: usize, nonblocking: bool) -> NetConn {
+    pub fn new_client(
+        server: Ipv4Addr,
+        port: usize,
+        proto: usize,
+        nonblocking: bool,
+        connect_timeout: Option<Duration>,
+    ) -> NetConn {
         NetConn {
             server,
             port,
@@ -22,24 +29,26 @@ impl NetConn {
             closed: false,
             stream: None,
             nonblocking,
+            connect_timeout,
         }
     }
 }
 
 impl common::Transport for NetConn {
-    fn dial(&mut self, timeout: Option<Duration>) -> Result<(), NxtError> {
+    fn dial(&mut self) -> Result<(), NxtError> {
         if self.proto == common::TCP {
             let socket = SocketAddr::V4(SocketAddrV4::new(self.server, self.port as u16));
-            let stream;
-            if timeout.is_some() {
-                stream = TcpStream::connect_timeout(&socket, timeout.unwrap())?;
-            } else {
-                stream = TcpStream::connect(&socket)?;
-            }
             if self.nonblocking {
-                stream.set_nonblocking(true)?;
+                let stream;
+                if self.connect_timeout.is_some() {
+                    stream = TcpStream::connect_timeout(&socket, self.connect_timeout.unwrap())?;
+                } else {
+                    stream = TcpStream::connect(&socket)?;
+                }
+                self.stream = Some(RawStream::Tcp(mio::net::TcpStream::from_std(stream)));
+            } else {
+                self.stream = Some(RawStream::Tcp(mio::net::TcpStream::connect(socket)?));
             }
-            self.stream = Some(RawStream::Tcp(mio::net::TcpStream::from_std(stream)));
         } else {
             let socket = UdpSocket::bind("0.0.0.0:0")?;
             socket.connect(&format!("{}:{}", self.server, self.port))?;
@@ -62,6 +71,7 @@ impl common::Transport for NetConn {
             RawStream::Udp(_) => {
                 // The socket will be closed when the object itself goes out of contex(ie dropped)
             }
+            _ => panic!("Unexpected stream type"),
         }
         Ok(())
     }
@@ -91,20 +101,18 @@ impl common::Transport for NetConn {
                         },
                     ));
                 }
-                Err(e) => match e.kind() {
-                    std::io::ErrorKind::WouldBlock => {
-                        return Err(NxtError {
-                            code: EWOULDBLOCK,
-                            detail: "".to_string(),
-                        })
-                    }
-                    _ => {
-                        return Err(NxtError {
-                            code: CONNECTION,
-                            detail: format!("{}", e),
-                        })
-                    }
-                },
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Err(NxtError {
+                        code: EWOULDBLOCK,
+                        detail: "".to_string(),
+                    })
+                }
+                Err(e) => {
+                    return Err(NxtError {
+                        code: CONNECTION,
+                        detail: format!("{}", e),
+                    })
+                }
             },
             RawStream::Udp(s) => match s.recv(&mut buf[0..]) {
                 Ok(size) => {
@@ -118,21 +126,20 @@ impl common::Transport for NetConn {
                         },
                     ));
                 }
-                Err(e) => match e.kind() {
-                    std::io::ErrorKind::WouldBlock => {
-                        return Err(NxtError {
-                            code: EWOULDBLOCK,
-                            detail: "".to_string(),
-                        })
-                    }
-                    _ => {
-                        return Err(NxtError {
-                            code: CONNECTION,
-                            detail: format!("{}", e),
-                        })
-                    }
-                },
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Err(NxtError {
+                        code: EWOULDBLOCK,
+                        detail: "".to_string(),
+                    })
+                }
+                Err(e) => {
+                    return Err(NxtError {
+                        code: CONNECTION,
+                        detail: format!("{}", e),
+                    })
+                }
             },
+            _ => panic!("Unexpected stream type"),
         }
     }
 
@@ -141,26 +148,24 @@ impl common::Transport for NetConn {
             let d = data.bufs.first().unwrap();
             match self.stream.as_mut().unwrap() {
                 RawStream::Tcp(s) => match s.write(&d[data.headroom..]) {
-                    Err(e) => match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            return Err((
-                                Some(data),
-                                NxtError {
-                                    code: EWOULDBLOCK,
-                                    detail: "".to_string(),
-                                },
-                            ));
-                        }
-                        _ => {
-                            return Err((
-                                None,
-                                NxtError {
-                                    code: CONNECTION,
-                                    detail: format!("{}", e),
-                                },
-                            ));
-                        }
-                    },
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        return Err((
+                            Some(data),
+                            NxtError {
+                                code: EWOULDBLOCK,
+                                detail: "".to_string(),
+                            },
+                        ));
+                    }
+                    Err(e) => {
+                        return Err((
+                            None,
+                            NxtError {
+                                code: CONNECTION,
+                                detail: format!("{}", e),
+                            },
+                        ));
+                    }
                     Ok(size) => {
                         let remaining = d[data.headroom..].len() - size;
                         if remaining == 0 {
@@ -179,26 +184,24 @@ impl common::Transport for NetConn {
                     }
                 },
                 RawStream::Udp(s) => match s.send(&d[data.headroom..]) {
-                    Err(e) => match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            return Err((
-                                Some(data),
-                                NxtError {
-                                    code: EWOULDBLOCK,
-                                    detail: "".to_string(),
-                                },
-                            ));
-                        }
-                        _ => {
-                            return Err((
-                                None,
-                                NxtError {
-                                    code: CONNECTION,
-                                    detail: format!("{}", e),
-                                },
-                            ));
-                        }
-                    },
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        return Err((
+                            Some(data),
+                            NxtError {
+                                code: EWOULDBLOCK,
+                                detail: "".to_string(),
+                            },
+                        ));
+                    }
+                    Err(e) => {
+                        return Err((
+                            None,
+                            NxtError {
+                                code: CONNECTION,
+                                detail: format!("{}", e),
+                            },
+                        ));
+                    }
                     Ok(size) => {
                         let remaining = d[data.headroom..].len() - size;
                         if remaining == 0 {
@@ -216,6 +219,7 @@ impl common::Transport for NetConn {
                         }
                     }
                 },
+                _ => panic!("Unexpected stream type"),
             }
         }
         Ok(())
@@ -239,10 +243,12 @@ impl common::Transport for NetConn {
                     token,
                     Interest::READABLE | Interest::WRITABLE,
                 )?,
+                _ => panic!("Unexpected stream type"),
             },
             RegType::Dereg => match self.stream.as_mut().unwrap() {
                 RawStream::Tcp(stream) => poll.registry().deregister(stream)?,
                 RawStream::Udp(stream) => poll.registry().deregister(stream)?,
+                _ => panic!("Unexpected stream type"),
             },
             RegType::Rereg => match self.stream.as_mut().unwrap() {
                 RawStream::Tcp(stream) => poll.registry().reregister(
@@ -255,6 +261,7 @@ impl common::Transport for NetConn {
                     token,
                     Interest::READABLE | Interest::WRITABLE,
                 )?,
+                _ => panic!("Unexpected stream type"),
             },
         }
         Ok(())

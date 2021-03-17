@@ -90,25 +90,21 @@ fn send_close(
 
     match socket.write_message(tungstenite::Message::Binary(buf)) {
         Ok(_) => return 0,
-        Err(e) => {
-            match &e {
-                tungstenite::Error::Io(ee) => match ee.kind() {
-                    std::io::ErrorKind::WouldBlock => {
-                        close_pending.push(stream);
-                        return 1;
-                    }
-                    _ => (),
-                },
-                _ => (),
+        Err(e) => match &e {
+            tungstenite::Error::Io(ee) if ee.kind() == std::io::ErrorKind::WouldBlock => {
+                close_pending.push(stream);
+                return 1;
             }
-            close_all_streams(socket, streams);
-            return 2;
-        }
+            _ => {
+                close_all_streams(socket, streams);
+                return 2;
+            }
+        },
     }
 }
 
 impl common::Transport for WebSession {
-    fn dial(&mut self, _: Option<Duration>) -> Result<(), NxtError> {
+    fn dial(&mut self) -> Result<(), NxtError> {
         let svr = format!("{}:{}", self.server_name, self.port);
         let mut request = Request::builder();
         request = request.uri(format!("wss://{}", svr));
@@ -194,26 +190,23 @@ impl common::Transport for WebSession {
         loop {
             let msg;
             match socket.read_message() {
-                Err(e) => {
-                    match &e {
-                        tungstenite::Error::Io(ee) => match ee.kind() {
-                            std::io::ErrorKind::WouldBlock => {
-                                return Err(NxtError {
-                                    code: NxtErr::EWOULDBLOCK,
-                                    detail: format!("{}", e),
-                                });
-                            }
-                            _ => (),
-                        },
-                        _ => (),
-                    }
-                    close_all_streams(socket, &mut self.streams);
-                    return Err(NxtError {
-                        code: NxtErr::CONNECTION,
-                        detail: format!("{}", e),
-                    });
-                }
                 Ok(m) => msg = m,
+
+                Err(e) => match &e {
+                    tungstenite::Error::Io(ee) if ee.kind() == std::io::ErrorKind::WouldBlock => {
+                        return Err(NxtError {
+                            code: NxtErr::EWOULDBLOCK,
+                            detail: format!("{}", e),
+                        });
+                    }
+                    _ => {
+                        close_all_streams(socket, &mut self.streams);
+                        return Err(NxtError {
+                            code: NxtErr::CONNECTION,
+                            detail: format!("{}", e),
+                        });
+                    }
+                },
             }
             match msg {
                 // Binary data from websocket
@@ -362,31 +355,27 @@ impl common::Transport for WebSession {
 
         match socket.write_message(tungstenite::Message::Binary(buf)) {
             Ok(_) => return Ok(()),
-            Err(e) => {
-                match &e {
-                    tungstenite::Error::Io(ee) => match ee.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            return Err((
-                                Some(data),
-                                NxtError {
-                                    code: NxtErr::EWOULDBLOCK,
-                                    detail: format!("{}", e),
-                                },
-                            ));
-                        }
-                        _ => (),
-                    },
-                    _ => (),
+            Err(e) => match &e {
+                tungstenite::Error::Io(ee) if ee.kind() == std::io::ErrorKind::WouldBlock => {
+                    return Err((
+                        Some(data),
+                        NxtError {
+                            code: NxtErr::EWOULDBLOCK,
+                            detail: format!("{}", e),
+                        },
+                    ));
                 }
-                close_all_streams(socket, &mut self.streams);
-                return Err((
-                    None,
-                    NxtError {
-                        code: NxtErr::CONNECTION,
-                        detail: format!("{}", e),
-                    },
-                ));
-            }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                    return Err((
+                        None,
+                        NxtError {
+                            code: NxtErr::CONNECTION,
+                            detail: format!("{}", e),
+                        },
+                    ));
+                }
+            },
         }
     }
 

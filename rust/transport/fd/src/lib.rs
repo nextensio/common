@@ -27,7 +27,7 @@ impl Fd {
 }
 
 impl common::Transport for Fd {
-    fn dial(&mut self, _: Option<Duration>) -> Result<(), NxtError> {
+    fn dial(&mut self) -> Result<(), NxtError> {
         Ok(())
     }
 

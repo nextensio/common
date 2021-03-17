@@ -105,6 +105,7 @@ impl From<std::io::Error> for NxtError {
 }
 
 pub enum RawStream {
+    TcpLis(mio::net::TcpListener),
     Tcp(mio::net::TcpStream),
     Udp(mio::net::UdpSocket),
 }
@@ -129,7 +130,18 @@ pub struct NxtBufs {
 }
 
 pub trait Transport {
-    fn dial(&mut self, timeout: Option<Duration>) -> Result<(), NxtError>;
+    fn dial(&mut self) -> Result<(), NxtError> {
+        Err(NxtError {
+            code: NxtErr::CONNECTION,
+            detail: "unimplemented".to_string(),
+        })
+    }
+    fn listen(&mut self) -> Result<Box<dyn Transport>, NxtError> {
+        Err(NxtError {
+            code: NxtErr::CONNECTION,
+            detail: "unimplemented".to_string(),
+        })
+    }
     fn new_stream(&mut self) -> u64;
     fn close(&mut self, stream: u64) -> Result<(), NxtError>;
     fn is_closed(&self, stream: u64) -> bool;
@@ -146,7 +158,10 @@ pub trait Transport {
     // This is an optional API to set the transport in non blocking mode and optionally
     // register it with an MIO poller
     fn event_register(&mut self, _: Token, _: &mut Poll, _: RegType) -> Result<(), NxtError> {
-        Ok(())
+        Err(NxtError {
+            code: NxtErr::CONNECTION,
+            detail: "unimplemented".to_string(),
+        })
     }
 
     // This is an optional implementations. This is meant for transports which have

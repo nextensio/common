@@ -4,6 +4,7 @@ members = [
     "transport/websocket",
     "transport/fd",
     "transport/l3proxy",
+    "transport/webproxy",
     "transport/dummy",
     "transport/netconn",
 ]

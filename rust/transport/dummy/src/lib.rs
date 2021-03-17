@@ -13,12 +13,11 @@ impl Default for Dummy {
 }
 
 impl common::Transport for Dummy {
-    fn dial(&mut self, _: Option<Duration>) -> Result<(), NxtError> {
+    fn dial(&mut self) -> Result<(), NxtError> {
         Ok(())
     }
 
     fn new_stream(&mut self) -> u64 {
-        // No new stream for fd
         0
     }
 

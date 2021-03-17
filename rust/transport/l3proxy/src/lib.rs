@@ -87,7 +87,7 @@ fn close_tcp(mut sock: SocketRef<TcpSocket>, closed: &mut bool) -> Result<(), Nx
 }
 
 impl<'a> common::Transport for Socket<'a> {
-    fn dial(&mut self, _: Option<Duration>) -> Result<(), NxtError> {
+    fn dial(&mut self) -> Result<(), NxtError> {
         Ok(())
     }
 
