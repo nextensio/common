@@ -32,7 +32,7 @@ pub struct Socket<'a> {
 }
 
 impl<'a> Socket<'a> {
-    pub fn new_client(tuple: FlowV4Key, mtu: usize) -> Self {
+    pub fn new_client(tuple: &FlowV4Key, mtu: usize) -> Self {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
