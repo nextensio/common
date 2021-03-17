@@ -1,6 +1,6 @@
 use common::{
-    as_u32_be, key_to_hdr, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK,
-    NxtError, RawStream, RegType, Transport, MAXBUF,
+    as_u32_be, key_to_hdr, parse_crnl, parse_host, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION,
+    NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType, Transport, MAXBUF,
 };
 use mio::{Interest, Poll, Token};
 use std::{io::Read, io::Write};
@@ -12,10 +12,7 @@ pub struct WebProxy {
     connect_buf: Option<Vec<u8>>,
     connect_parsed: bool,
     rxlen: usize,
-    txlen: usize,
 }
-
-const HTTP_OK: &str = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
 
 // this is a non-blocking version, there is no option for this to work in a
 // blocking mode as of now.
@@ -30,17 +27,8 @@ impl WebProxy {
             connect_buf: None,
             connect_parsed: false,
             rxlen: 0,
-            txlen: 0,
         }
     }
-}
-
-fn parse_crnl(buf: &[u8], len: usize, extra: usize) -> usize {
-    0
-}
-
-fn parse_connect(buf: &[u8]) -> (u16, String) {
-    (0, "".to_string())
 }
 
 impl common::Transport for WebProxy {
@@ -69,7 +57,6 @@ impl common::Transport for WebProxy {
                                 connect_parsed: false,
                                 socket: Some(RawStream::Tcp(stream)),
                                 rxlen: 0,
-                                txlen: 0,
                             }));
                         }
                         _ => {
@@ -119,25 +106,28 @@ impl common::Transport for WebProxy {
         match self.socket.as_mut().unwrap() {
             RawStream::Tcp(stream) => {
                 let mut buf;
+                let offset;
                 if !self.connect_parsed {
                     buf = self.connect_buf.take().unwrap();
+                    offset = self.rxlen;
                 } else {
                     buf = vec![0; MAXBUF];
+                    offset = 0;
                 }
-                match stream.read(&mut buf[self.rxlen..]) {
+                match stream.read(&mut buf[offset..]) {
                     Ok(len) => {
                         if !self.connect_parsed {
-                            let crnl = parse_crnl(&buf[0..], self.rxlen, len);
                             self.rxlen += len;
+                            let crnl = parse_crnl(&buf[0..self.rxlen]);
                             if crnl != 0 {
-                                let (dport, dip) = parse_connect(&buf[0..crnl]);
+                                let (dport, dip) = parse_host(&["CONNECT"], &buf[0..crnl]);
                                 if dport == 0 || dip == "" {
                                     return Err(NxtError {
                                         code: NxtErr::CONNECTION,
                                         detail: "Bad Connect".to_string(),
                                     });
                                 }
-                                self.key.dport = dport;
+                                self.key.dport = dport as u16;
                                 self.key.dip = dip;
                                 self.connect_parsed = true;
                                 if self.rxlen > crnl {
@@ -156,11 +146,17 @@ impl common::Transport for WebProxy {
                                         detail: "".to_string(),
                                     });
                                 }
-                            } else {
+                            } else if self.rxlen < buf.capacity() {
                                 // we have not yet received the entire CONNECT request, keep trying
                                 self.connect_buf = Some(buf);
                                 return Err(NxtError {
                                     code: EWOULDBLOCK,
+                                    detail: "".to_string(),
+                                });
+                            } else {
+                                // We dont expect connect req to need so much space!
+                                return Err(NxtError {
+                                    code: CONNECTION,
                                     detail: "".to_string(),
                                 });
                             }
@@ -194,14 +190,50 @@ impl common::Transport for WebProxy {
         }
     }
 
-    fn write(&mut self, _: u64, _: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
-        return Err((
-            None,
-            NxtError {
-                code: NxtErr::CONNECTION,
-                detail: "WebProxy trait".to_string(),
-            },
-        ));
+    fn write(&mut self, _: u64, mut data: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
+        while !data.bufs.is_empty() {
+            let d = data.bufs.first().unwrap();
+            match self.socket.as_mut().unwrap() {
+                RawStream::Tcp(s) => match s.write(&d[data.headroom..]) {
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        return Err((
+                            Some(data),
+                            NxtError {
+                                code: EWOULDBLOCK,
+                                detail: "".to_string(),
+                            },
+                        ));
+                    }
+                    Err(e) => {
+                        return Err((
+                            None,
+                            NxtError {
+                                code: CONNECTION,
+                                detail: format!("{}", e),
+                            },
+                        ));
+                    }
+                    Ok(size) => {
+                        let remaining = d[data.headroom..].len() - size;
+                        if remaining == 0 {
+                            data.bufs.remove(0);
+                            data.headroom = 0;
+                        } else {
+                            data.headroom += size;
+                            return Err((
+                                Some(data),
+                                NxtError {
+                                    code: EWOULDBLOCK,
+                                    detail: "".to_string(),
+                                },
+                            ));
+                        }
+                    }
+                },
+                _ => panic!("Unexpected socket type"),
+            }
+        }
+        Ok(())
     }
 
     fn event_register(

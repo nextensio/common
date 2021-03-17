@@ -273,5 +273,84 @@ pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
     return hdr;
 }
 
+fn nlcrnl(v: &[u8]) -> bool {
+    if v[0] == '\n' as u8 && v[1] == '\r' as u8 && v[2] == '\n' as u8 {
+        return true;
+    }
+    return false;
+}
+
+pub fn parse_crnl(buf: &[u8]) -> usize {
+    // Look for the sequence '\n\r\n' - ie a CRLF on a line by itself
+    // A brute force check here without maintaining any state, for every
+    // set of three bytes, check if they are \n\r\n
+    for i in 0..buf.len() {
+        if i >= 2 {
+            if nlcrnl(&buf[i - 2..i + 1]) {
+                return i + 1;
+            }
+        }
+        if i >= 1 && i + 1 < buf.len() {
+            if nlcrnl(&buf[i - 1..i + 2]) {
+                return i + 2;
+            }
+        }
+        if i + 2 < buf.len() {
+            if nlcrnl(&buf[i..i + 3]) {
+                return i + 3;
+            }
+        }
+    }
+    return 0;
+}
+
+pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
+    let mut headers = [httparse::EMPTY_HEADER; 64];
+    let mut req = httparse::Request::new(&mut headers);
+    match req.parse(buf) {
+        Ok(_) => {
+            if !methods.is_empty() {
+                if req.method.is_none() {
+                    return (0, "".to_string());
+                }
+                let mut found = false;
+                let method = req.method.unwrap().to_uppercase();
+                for m in methods {
+                    if method == *m {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    return (0, "".to_string());
+                }
+            }
+            for h in headers.iter() {
+                if h.name.to_uppercase() == "HOST" {
+                    let host = std::str::from_utf8(h.value);
+                    if host.is_err() {
+                        return (0, "".to_string());
+                    }
+                    let host = host.unwrap();
+                    match host.find(":") {
+                        Some(o) => {
+                            let dest = &host[0..o];
+                            let port = &host[o + 1..];
+                            let p = port.parse::<usize>();
+                            if p.is_err() {
+                                return (0, "".to_string());
+                            }
+                            return (p.unwrap(), dest.to_string());
+                        }
+                        None => return (0, host.to_string()),
+                    }
+                }
+            }
+        }
+        Err(_) => return (0, "".to_string()),
+    }
+    return (0, "".to_string());
+}
+
 #[cfg(test)]
 mod test;
