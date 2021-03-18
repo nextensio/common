@@ -273,6 +273,30 @@ pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
     return hdr;
 }
 
+pub fn hdr_to_key(hdr: &NxtHdr) -> Option<FlowV4Key> {
+    match hdr.hdr.as_ref().unwrap() {
+        Hdr::Flow(flow) => {
+            let sipb: Result<Ipv4Addr, _> = flow.source.parse();
+            let dip = flow.dest.clone();
+            // This has to be a corrupt packet, otherwise we can have a
+            // garbage ip address come in. We cant keep the session/tun open
+            // with even one garbage packet coming in on it
+            if sipb.is_err() {
+                return None;
+            }
+            let sip = as_u32_be(&sipb.unwrap().octets());
+            return Some(FlowV4Key {
+                sip,
+                dip,
+                sport: flow.sport as u16,
+                dport: flow.dport as u16,
+                proto: flow.proto as usize,
+            });
+        }
+        _ => return None,
+    }
+}
+
 fn nlcrnl(v: &[u8]) -> bool {
     if v[0] == '\n' as u8 && v[1] == '\r' as u8 && v[2] == '\n' as u8 {
         return true;
