@@ -17,7 +17,7 @@ pub struct WebProxy {
 // this is a non-blocking version, there is no option for this to work in a
 // blocking mode as of now.
 impl WebProxy {
-    fn new_client(port: usize) -> WebProxy {
+    pub fn new_client(port: usize) -> WebProxy {
         let mut key = FlowV4Key::default();
         key.sport = port as u16;
         WebProxy {
@@ -130,22 +130,21 @@ impl common::Transport for WebProxy {
                                 self.key.dport = dport as u16;
                                 self.key.dip = dip;
                                 self.connect_parsed = true;
-                                if self.rxlen > crnl {
-                                    unsafe { buf.set_len(self.rxlen) }
-                                    return Ok((
-                                        0,
-                                        NxtBufs {
-                                            hdr: Some(key_to_hdr(&self.key)),
-                                            bufs: vec![buf],
-                                            headroom: crnl,
-                                        },
-                                    ));
-                                } else {
-                                    return Err(NxtError {
-                                        code: EWOULDBLOCK,
-                                        detail: "".to_string(),
-                                    });
-                                }
+                                // The very first time we detect the destination, we return an nxthdr
+                                // as some place to return that info, after that nxthdr is just None.
+                                // We dont get any other payload till we send back an http 200 ok to the
+                                // connect request, and the OK is not sent till the reader gets this frame
+                                // with indication of what destination is etc..
+                                return Ok((
+                                    0,
+                                    NxtBufs {
+                                        // The very first time we detect the destination, we return an nxthdr
+                                        // as some place to return that info, after that nxthdr is just None
+                                        hdr: Some(key_to_hdr(&self.key)),
+                                        bufs: vec![],
+                                        headroom: 0,
+                                    },
+                                ));
                             } else if self.rxlen < buf.capacity() {
                                 // we have not yet received the entire CONNECT request, keep trying
                                 self.connect_buf = Some(buf);
@@ -165,7 +164,7 @@ impl common::Transport for WebProxy {
                             return Ok((
                                 0,
                                 NxtBufs {
-                                    hdr: Some(key_to_hdr(&self.key)),
+                                    hdr: None,
                                     bufs: vec![buf],
                                     headroom: 0,
                                 },

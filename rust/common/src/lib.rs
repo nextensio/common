@@ -329,7 +329,8 @@ pub fn parse_crnl(buf: &[u8]) -> usize {
 }
 
 pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
-    let mut headers = [httparse::EMPTY_HEADER; 64];
+    // Hopefully Host is within the first 16 headers
+    let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut req = httparse::Request::new(&mut headers);
     match req.parse(buf) {
         Ok(_) => {
