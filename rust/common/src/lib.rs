@@ -350,6 +350,15 @@ pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
                     return (0, "".to_string());
                 }
             }
+            let mut default_port = 0;
+            if let Some(path) = req.path {
+                if path.contains("http://") {
+                    default_port = 80;
+                }
+                if path.contains("https://") {
+                    default_port = 443;
+                }
+            }
             for h in headers.iter() {
                 if h.name.to_uppercase() == "HOST" {
                     let host = std::str::from_utf8(h.value);
@@ -363,7 +372,7 @@ pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
                             let port = &host[o + 1..];
                             let p = port.parse::<usize>();
                             if p.is_err() {
-                                return (0, "".to_string());
+                                return (default_port, "".to_string());
                             }
                             return (p.unwrap(), dest.to_string());
                         }

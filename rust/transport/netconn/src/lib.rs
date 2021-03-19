@@ -2,10 +2,7 @@ use common::{NxtBufs, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RawStre
 use mio::{Interest, Poll, Token};
 use std::net::UdpSocket;
 use std::{io::Read, io::Write};
-use std::{
-    net::Ipv4Addr, net::SocketAddr, net::SocketAddrV4, net::TcpStream, net::ToSocketAddrs,
-    time::Duration,
-};
+use std::{net::SocketAddr, net::TcpStream, net::ToSocketAddrs, time::Duration};
 
 pub struct NetConn {
     closed: bool,
