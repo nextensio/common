@@ -142,7 +142,7 @@ impl common::Transport for WebProxy {
                                 self.connect_parsed = true;
                                 if method == "CONNECT" {
                                     // We need to send an http-ok back
-                                    buf[0..].copy_from_slice(HTTP_OK);
+                                    buf[0..HTTP_OK.len()].copy_from_slice(HTTP_OK);
                                     unsafe { buf.set_len(HTTP_OK.len()) }
                                     self.connect_buf = Some(buf);
                                     self.buf_off = 0;
