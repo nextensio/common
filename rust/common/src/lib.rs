@@ -376,3 +376,5 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
 
 #[cfg(test)]
 mod test;
+
+pub mod tls;
