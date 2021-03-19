@@ -376,7 +376,7 @@ pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
                             }
                             return (p.unwrap(), dest.to_string());
                         }
-                        None => return (0, host.to_string()),
+                        None => return (default_port, host.to_string()),
                     }
                 }
             }

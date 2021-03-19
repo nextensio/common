@@ -116,11 +116,17 @@ impl common::Transport for WebProxy {
                 }
                 match stream.read(&mut buf[offset..]) {
                     Ok(len) => {
+                        if len == 0 {
+                            return Err(NxtError {
+                                code: EWOULDBLOCK,
+                                detail: "".to_string(),
+                            });
+                        }
                         if !self.connect_parsed {
                             self.rxlen += len;
                             let crnl = parse_crnl(&buf[0..self.rxlen]);
                             if crnl != 0 {
-                                let (dport, dip) = parse_host(&["CONNECT"], &buf[0..crnl]);
+                                let (dport, dip) = parse_host(&["CONNECT", "GET"], &buf[0..crnl]);
                                 if dport == 0 || dip == "" {
                                     return Err(NxtError {
                                         code: NxtErr::CONNECTION,
