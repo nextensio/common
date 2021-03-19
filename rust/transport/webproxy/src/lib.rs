@@ -5,13 +5,15 @@ use common::{
 use mio::{Interest, Poll, Token};
 use std::{io::Read, io::Write};
 
+const HTTP_OK: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+
 pub struct WebProxy {
     closed: bool,
     key: FlowV4Key,
     socket: Option<RawStream>,
     connect_buf: Option<Vec<u8>>,
     connect_parsed: bool,
-    rxlen: usize,
+    buf_off: usize,
 }
 
 // this is a non-blocking version, there is no option for this to work in a
@@ -26,7 +28,7 @@ impl WebProxy {
             socket: None,
             connect_buf: None,
             connect_parsed: false,
-            rxlen: 0,
+            buf_off: 0,
         }
     }
 }
@@ -56,7 +58,7 @@ impl common::Transport for WebProxy {
                                 connect_buf: Some(vec![0; MAXBUF]),
                                 connect_parsed: false,
                                 socket: Some(RawStream::Tcp(stream)),
-                                rxlen: 0,
+                                buf_off: 0,
                             }));
                         }
                         _ => {
@@ -109,7 +111,7 @@ impl common::Transport for WebProxy {
                 let offset;
                 if !self.connect_parsed {
                     buf = self.connect_buf.take().unwrap();
-                    offset = self.rxlen;
+                    offset = self.buf_off;
                 } else {
                     buf = vec![0; MAXBUF];
                     offset = 0;
@@ -125,10 +127,10 @@ impl common::Transport for WebProxy {
                             });
                         }
                         if !self.connect_parsed {
-                            self.rxlen += len;
-                            let crnl = parse_crnl(&buf[0..self.rxlen]);
+                            self.buf_off += len;
+                            let crnl = parse_crnl(&buf[0..self.buf_off]);
                             if crnl != 0 {
-                                let (dport, dip) = parse_host(&["CONNECT", "GET"], &buf[0..crnl]);
+                                let (method, dport, dip) = parse_host(&buf[0..crnl]);
                                 if dport == 0 || dip == "" {
                                     return Err(NxtError {
                                         code: NxtErr::CONNECTION,
@@ -138,22 +140,44 @@ impl common::Transport for WebProxy {
                                 self.key.dport = dport as u16;
                                 self.key.dip = dip;
                                 self.connect_parsed = true;
-                                // The very first time we detect the destination, we return an nxthdr
-                                // as some place to return that info, after that nxthdr is just None.
-                                // We dont get any other payload till we send back an http 200 ok to the
-                                // connect request, and the OK is not sent till the reader gets this frame
-                                // with indication of what destination is etc..
-                                return Ok((
-                                    0,
-                                    NxtBufs {
-                                        // The very first time we detect the destination, we return an nxthdr
-                                        // as some place to return that info, after that nxthdr is just None
-                                        hdr: Some(key_to_hdr(&self.key)),
-                                        bufs: vec![],
-                                        headroom: 0,
-                                    },
-                                ));
-                            } else if self.rxlen < buf.capacity() {
+                                if method == "CONNECT" {
+                                    // We need to send an http-ok back
+                                    buf[0..].clone_from_slice(HTTP_OK);
+                                    unsafe { buf.set_len(HTTP_OK.len()) }
+                                    self.connect_buf = Some(buf);
+                                    self.buf_off = 0;
+                                    // The connect request is an internal payload thats consumed here
+                                    return Ok((
+                                        0,
+                                        NxtBufs {
+                                            // The very first time we detect the destination, we return an nxthdr
+                                            // as some place to return that info, after that nxthdr is just None
+                                            hdr: Some(key_to_hdr(&self.key)),
+                                            bufs: vec![],
+                                            headroom: 0,
+                                        },
+                                    ));
+                                } else if method == "GET" {
+                                    unsafe { buf.set_len(crnl) }
+                                    // The GET request is given back to the reader who will then transport it to
+                                    // the final destination
+                                    return Ok((
+                                        0,
+                                        NxtBufs {
+                                            // The very first time we detect the destination, we return an nxthdr
+                                            // as some place to return that info, after that nxthdr is just None
+                                            hdr: Some(key_to_hdr(&self.key)),
+                                            bufs: vec![buf],
+                                            headroom: 0,
+                                        },
+                                    ));
+                                } else {
+                                    return Err(NxtError {
+                                        code: CONNECTION,
+                                        detail: "Unsupported method".to_string(),
+                                    });
+                                }
+                            } else if self.buf_off < buf.capacity() {
                                 // we have not yet received the entire CONNECT request, keep trying
                                 self.connect_buf = Some(buf);
                                 return Err(NxtError {
@@ -198,6 +222,46 @@ impl common::Transport for WebProxy {
     }
 
     fn write(&mut self, _: u64, mut data: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
+        // If there is any pending http-ok to be sent, send that first before any other data is attempted
+        if let Some(buf) = self.connect_buf.take() {
+            match self.socket.as_mut().unwrap() {
+                RawStream::Tcp(s) => match s.write(&buf[self.buf_off..]) {
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        return Err((
+                            Some(data),
+                            NxtError {
+                                code: EWOULDBLOCK,
+                                detail: "".to_string(),
+                            },
+                        ));
+                    }
+                    Err(e) => {
+                        return Err((
+                            None,
+                            NxtError {
+                                code: CONNECTION,
+                                detail: format!("{}", e),
+                            },
+                        ));
+                    }
+                    Ok(size) => {
+                        self.buf_off += size;
+                        if self.buf_off != buf.len() {
+                            self.connect_buf = Some(buf);
+                            return Err((
+                                Some(data),
+                                NxtError {
+                                    code: EWOULDBLOCK,
+                                    detail: "".to_string(),
+                                },
+                            ));
+                        }
+                    }
+                },
+                _ => panic!("Unexpected socket type"),
+            }
+        }
+
         while !data.bufs.is_empty() {
             let d = data.bufs.first().unwrap();
             match self.socket.as_mut().unwrap() {

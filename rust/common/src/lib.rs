@@ -328,28 +328,16 @@ pub fn parse_crnl(buf: &[u8]) -> usize {
     return 0;
 }
 
-pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
+pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
     // Hopefully Host is within the first 16 headers
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut req = httparse::Request::new(&mut headers);
     match req.parse(buf) {
         Ok(_) => {
-            if !methods.is_empty() {
-                if req.method.is_none() {
-                    return (0, "".to_string());
-                }
-                let mut found = false;
-                let method = req.method.unwrap().to_uppercase();
-                for m in methods {
-                    if method == *m {
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
-                    return (0, "".to_string());
-                }
+            if req.method.is_none() {
+                return ("".to_string(), 0, "".to_string());
             }
+            let method = req.method.unwrap().to_string().to_uppercase();
             let mut default_port = 0;
             if let Some(path) = req.path {
                 if path.contains("http://") {
@@ -363,7 +351,7 @@ pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
                 if h.name.to_uppercase() == "HOST" {
                     let host = std::str::from_utf8(h.value);
                     if host.is_err() {
-                        return (0, "".to_string());
+                        return ("".to_string(), 0, "".to_string());
                     }
                     let host = host.unwrap();
                     match host.find(":") {
@@ -372,18 +360,18 @@ pub fn parse_host(methods: &[&str], buf: &[u8]) -> (usize, String) {
                             let port = &host[o + 1..];
                             let p = port.parse::<usize>();
                             if p.is_err() {
-                                return (default_port, "".to_string());
+                                return ("".to_string(), 0, "".to_string());
                             }
-                            return (p.unwrap(), dest.to_string());
+                            return (method, p.unwrap(), dest.to_string());
                         }
-                        None => return (default_port, host.to_string()),
+                        None => return (method, default_port, host.to_string()),
                     }
                 }
             }
         }
-        Err(_) => return (0, "".to_string()),
+        Err(_) => return ("".to_string(), 0, "".to_string()),
     }
-    return (0, "".to_string());
+    return ("".to_string(), 0, "".to_string());
 }
 
 #[cfg(test)]
