@@ -2,11 +2,14 @@ use common::{NxtBufs, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RawStre
 use mio::{Interest, Poll, Token};
 use std::net::UdpSocket;
 use std::{io::Read, io::Write};
-use std::{net::Ipv4Addr, net::SocketAddr, net::SocketAddrV4, net::TcpStream, time::Duration};
+use std::{
+    net::Ipv4Addr, net::SocketAddr, net::SocketAddrV4, net::TcpStream, net::ToSocketAddrs,
+    time::Duration,
+};
 
 pub struct NetConn {
     closed: bool,
-    server: Ipv4Addr,
+    server: String,
     port: usize,
     proto: usize,
     stream: Option<RawStream>,
@@ -16,7 +19,7 @@ pub struct NetConn {
 
 impl NetConn {
     pub fn new_client(
-        server: Ipv4Addr,
+        server: String,
         port: usize,
         proto: usize,
         nonblocking: bool,
@@ -34,24 +37,42 @@ impl NetConn {
     }
 }
 
+fn resolve_addr(dest_port: &str) -> Option<SocketAddr> {
+    match dest_port.to_socket_addrs() {
+        Ok(mut addrs) => match addrs.next() {
+            Some(addr) => Some(addr),
+            _ => None,
+        },
+        Err(_) => None,
+    }
+}
+
 impl common::Transport for NetConn {
     fn dial(&mut self) -> Result<(), NxtError> {
+        let dest_port = format!("{}:{}", self.server, self.port);
+        let addr = resolve_addr(&dest_port);
+        if addr.is_none() {
+            return Err(NxtError {
+                code: common::NxtErr::GENERAL,
+                detail: "cannot resolve address".to_string(),
+            });
+        };
+        let addr = addr.unwrap();
         if self.proto == common::TCP {
-            let socket = SocketAddr::V4(SocketAddrV4::new(self.server, self.port as u16));
             if !self.nonblocking {
                 let stream;
                 if self.connect_timeout.is_some() {
-                    stream = TcpStream::connect_timeout(&socket, self.connect_timeout.unwrap())?;
+                    stream = TcpStream::connect_timeout(&addr, self.connect_timeout.unwrap())?;
                 } else {
-                    stream = TcpStream::connect(&socket)?;
+                    stream = TcpStream::connect(&addr)?;
                 }
                 self.stream = Some(RawStream::Tcp(mio::net::TcpStream::from_std(stream)));
             } else {
-                self.stream = Some(RawStream::Tcp(mio::net::TcpStream::connect(socket)?));
+                self.stream = Some(RawStream::Tcp(mio::net::TcpStream::connect(addr)?));
             }
         } else {
             let socket = UdpSocket::bind("0.0.0.0:0")?;
-            socket.connect(&format!("{}:{}", self.server, self.port))?;
+            socket.connect(&addr)?;
             if self.nonblocking {
                 socket.set_nonblocking(true)?;
             }
