@@ -18,7 +18,7 @@ struct ClientHello {
     sni: String,
 }
 
-pub fn sni_from_hello(payload: &[u8]) -> Option<String> {
+pub fn parse_sni(payload: &[u8]) -> Option<String> {
     let mut ch = ClientHello::default();
     ch.message.msg_type = payload[0];
 
