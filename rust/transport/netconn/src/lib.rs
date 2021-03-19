@@ -103,9 +103,11 @@ impl common::Transport for NetConn {
         match self.stream.as_mut().unwrap() {
             RawStream::Tcp(s) => match s.read(&mut buf[0..]) {
                 Ok(size) => {
+                    // Why would we get read of size 0 ? Even if its a non blocking
+                    // socket, that should be an error WouldBlock
                     if size == 0 {
                         return Err(NxtError {
-                            code: EWOULDBLOCK,
+                            code: CONNECTION,
                             detail: "".to_string(),
                         });
                     }
