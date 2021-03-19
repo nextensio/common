@@ -89,7 +89,7 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
         return None;
     }
 
-    let hs = &hs[2..];
+    let mut hs = &hs[2..];
 
     while hs.len() > 0 {
         if hs.len() < 4 {
@@ -104,6 +104,7 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
         }
 
         let data = &hs[4..4 + length as usize];
+        hs = &hs[4 + length as usize..];
 
         if ext_type == EXT_SERVER_NAME {
             if data.len() < 2 {
