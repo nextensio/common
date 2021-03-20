@@ -73,20 +73,18 @@ impl common::Transport for Fd {
                     }
                 }
                 mut end => {
-                    // Sigh, apple adds stuff to the head of the packet (why head!!) and
-                    // we need to move it, also read comments in the write() API
+                    let mut headroom = HEADROOM;
                     if self.platform == 1 {
-                        end = end - 4;
-                        let src = ptr as u64 + 4;
-                        libc::memmove(ptr, src as *mut c_void, end as usize);
+                        headroom += 4;
+                        end -= 4;
                     }
-                    buf.set_len(end as usize + HEADROOM);
+                    buf.set_len(end as usize + headroom);
                     Ok((
                         0,
                         NxtBufs {
                             hdr: None,
                             bufs: vec![buf],
-                            headroom: HEADROOM,
+                            headroom,
                         },
                     ))
                 }
@@ -100,7 +98,8 @@ impl common::Transport for Fd {
             let mut dcloned: Vec<u8>;
 
             // IOS/Macos tun implementation appends a 4-bytes protocol information header
-            // to each packet. IFF_NO_PI option can prevent this (TODO) ??
+            // to each packet. IFF_NO_PI option can prevent this (TODO) ?? Also if there is
+            // headroom >= 4 bytes, we can just slap in this data in the headroom instead
             if self.platform == 1 {
                 dcloned = vec![0x0, 0x0, 0x0, AF_INET];
                 dcloned.extend_from_slice(&d[data.headroom..]);
