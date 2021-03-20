@@ -51,9 +51,10 @@ impl common::Transport for Fd {
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
         let mut buf: Vec<u8> = Vec::with_capacity(MAXBUF);
         unsafe {
-            let ptr = buf.as_mut_ptr() as u64 + HEADROOM as u64;
+            let mut headroom = HEADROOM;
+            let ptr = buf.as_mut_ptr() as u64 + headroom as u64;
             let ptr = ptr as *mut c_void;
-            match libc::read(self.fd, ptr, MAXBUF - HEADROOM) {
+            match libc::read(self.fd, ptr, MAXBUF - headroom) {
                 -1 => {
                     let e = std::io::Error::last_os_error();
                     match e.kind() {
@@ -72,13 +73,11 @@ impl common::Transport for Fd {
                         }
                     }
                 }
-                mut end => {
-                    let mut headroom = HEADROOM;
+                size => {
+                    buf.set_len(size as usize + headroom);
                     if self.platform == 1 {
                         headroom += 4;
-                        end -= 4;
                     }
-                    buf.set_len(end as usize + headroom);
                     Ok((
                         0,
                         NxtBufs {
