@@ -74,8 +74,11 @@ impl common::Transport for Fd {
                     }
                 }
                 size => {
+                    // This is setting the "end" of the buffer. The data is
+                    // from offset headroom till end of the buffer
                     buf.set_len(size as usize + headroom);
                     if self.platform == 1 {
+                        // extend headroom by 4 bytes, ie ignore first 4 bytes
                         headroom += 4;
                     }
                     Ok((
@@ -93,19 +96,23 @@ impl common::Transport for Fd {
 
     fn write(&mut self, _: u64, mut data: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
         while !data.bufs.is_empty() {
-            let mut d = data.bufs.first().unwrap();
             let mut dcloned: Vec<u8>;
-
+            let ptr;
+            let len;
             // IOS/Macos tun implementation appends a 4-bytes protocol information header
             // to each packet. IFF_NO_PI option can prevent this (TODO) ?? Also if there is
             // headroom >= 4 bytes, we can just slap in this data in the headroom instead
             if self.platform == 1 {
                 dcloned = vec![0x0, 0x0, 0x0, AF_INET];
+                let d = data.bufs.first().unwrap();
                 dcloned.extend_from_slice(&d[data.headroom..]);
-                d = &dcloned;
+                ptr = dcloned[0..].as_ptr() as *const libc::c_void;
+                len = dcloned[0..].len();
+            } else {
+                let d = data.bufs.first().unwrap();
+                ptr = d[data.headroom..].as_ptr() as *const libc::c_void;
+                len = d[data.headroom..].len();
             }
-            let ptr = d[data.headroom..].as_ptr() as *const libc::c_void;
-            let len = d[data.headroom..].len();
             unsafe {
                 match libc::write(self.fd, ptr, len) {
                     -1 => {
@@ -132,8 +139,8 @@ impl common::Transport for Fd {
                             }
                         }
                     }
-                    len => {
-                        assert!(len == d[data.headroom..].len() as isize);
+                    txbytes => {
+                        assert!(txbytes == len as isize);
                         data.bufs.remove(0);
                         data.headroom = 0;
                     }
