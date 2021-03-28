@@ -2,7 +2,8 @@ use etherparse::InternetSlice::*;
 use etherparse::SlicedPacket;
 use etherparse::TransportSlice::*;
 use mio::{Poll, Token};
-use std::{collections::VecDeque, fmt, net::Ipv4Addr};
+use std::panic;
+use std::{collections::VecDeque, fmt, net::Ipv4Addr, time::Instant};
 
 pub mod nxthdr {
     include!(concat!(env!("OUT_DIR"), "/nxthdr.rs"));
@@ -374,6 +375,13 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
     return ("".to_string(), 0, "".to_string());
 }
 
+pub fn time_now() -> Option<Instant> {
+    let result = panic::catch_unwind(|| Instant::now());
+    match result {
+        Ok(res) => Some(res),
+        Err(_) => None,
+    }
+}
 #[cfg(test)]
 mod test;
 

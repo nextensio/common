@@ -1,19 +1,19 @@
 use common::{
-    FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, MAXBUF, TCP, UDP,
+    time_now, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError,
+    MAXBUF, TCP, UDP,
 };
+use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
 use smoltcp::socket::TcpSocketBuffer;
 use smoltcp::socket::UdpSocket;
 use smoltcp::socket::{UdpPacketMetadata, UdpSocketBuffer};
-use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint};
 use smoltcp::Error;
-use smoltcp::{iface::InterfaceBuilder, time};
 use smoltcp::{
     phy::packetq::PacketQ, phy::Medium, socket::SocketHandle, socket::SocketRef, socket::SocketSet,
 };
+use std::collections::VecDeque;
 use std::net::Ipv4Addr;
-use std::{collections::VecDeque, time::SystemTime};
 
 // NOTE: See pub enum ManagedSlice in slice.rs in the smoltcp code,
 // the lifetime here is for the 'Borrowed' variant of that enum in
@@ -318,11 +318,15 @@ impl<'a> common::Transport for Socket<'a> {
         let mut interface = InterfaceBuilder::new(pktq)
             .ip_addrs(self.ip_addrs)
             .finalize();
-        interface
-            .poll(
-                &mut self.onesock,
-                smoltcp::time::Instant::from(SystemTime::now()),
-            )
-            .ok();
+        if let Some(timestamp) = time_now() {
+            interface
+                .poll(&mut self.onesock, smoltcp::time::Instant::from(timestamp))
+                .ok();
+        } else {
+            // We have seen timestamp get fail on android when switching apps, not sure why,
+            // maybe because of issues with time going backwards or something when an goes
+            // into the background and comes back ? Drop the packets and move on
+            rx.clear();
+        }
     }
 }
