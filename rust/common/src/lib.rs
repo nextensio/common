@@ -394,7 +394,7 @@ pub fn time_now() -> Duration {
             ret = libc::clock_gettime(libc::CLOCK_REALTIME, &mut t);
         }
         if ret == 0 {
-            let nsecs: i64 = t.tv_sec * 1_000_000_000 + t.tv_nsec;
+            let nsecs: i64 = (t.tv_sec * 1_000_000_000 + t.tv_nsec).into();
             return Duration::from_nanos(nsecs as u64);
         }
     }
