@@ -319,7 +319,12 @@ impl<'a> common::Transport for Socket<'a> {
             .ip_addrs(self.ip_addrs)
             .finalize();
         interface
-            .poll(&mut self.onesock, smoltcp::time::Instant::from(time_now()))
+            .poll(
+                &mut self.onesock,
+                smoltcp::time::Instant {
+                    millis: time_now().as_millis() as i64,
+                },
+            )
             .ok();
     }
 }
