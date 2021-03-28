@@ -94,20 +94,32 @@ impl common::Transport for Fd {
         }
     }
 
+    // Note that headroom applies to only the first buffer in the vector of buffers. Typically
+    // we just get a single buffer to transmit, so its headroom plus just one buffer. But if its
+    // more than one buffer, as we can see, the headroom is reset to 0 after the first buffer.
     fn write(&mut self, _: u64, mut data: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
         while !data.bufs.is_empty() {
-            let mut dcloned: Vec<u8>;
             let ptr;
             let len;
+            let mut rewind_head = false;
             // IOS/Macos tun implementation appends a 4-bytes protocol information header
-            // to each packet. IFF_NO_PI option can prevent this (TODO) ?? Also if there is
-            // headroom >= 4 bytes, we can just slap in this data in the headroom instead
+            // to each packet. IFF_NO_PI option can prevent this (TODO) ??
             if self.platform == 1 {
-                dcloned = vec![0x0, 0x0, 0x0, AF_INET];
-                let d = data.bufs.first().unwrap();
-                dcloned.extend_from_slice(&d[data.headroom..]);
-                ptr = dcloned[0..].as_ptr() as *const libc::c_void;
-                len = dcloned[0..].len();
+                if data.headroom >= 4 {
+                    let dcloned: [u8; 4] = [0x0, 0x0, 0x0, AF_INET];
+                    let d = data.bufs.first_mut().unwrap();
+                    data.headroom -= 4;
+                    d[data.headroom..data.headroom + 4].copy_from_slice(&dcloned);
+                    ptr = d[data.headroom..].as_ptr() as *const libc::c_void;
+                    len = d[data.headroom..].len();
+                    rewind_head = true;
+                } else {
+                    let mut dcloned: Vec<u8> = vec![0x0, 0x0, 0x0, AF_INET];
+                    let d = data.bufs.first().unwrap();
+                    dcloned.extend_from_slice(&d[data.headroom..]);
+                    ptr = dcloned[0..].as_ptr() as *const libc::c_void;
+                    len = dcloned[0..].len();
+                }
             } else {
                 let d = data.bufs.first().unwrap();
                 ptr = d[data.headroom..].as_ptr() as *const libc::c_void;
@@ -119,6 +131,9 @@ impl common::Transport for Fd {
                         let e = std::io::Error::last_os_error();
                         match e.kind() {
                             std::io::ErrorKind::WouldBlock => {
+                                if rewind_head {
+                                    data.headroom += 4;
+                                }
                                 return Err((
                                     Some(data),
                                     NxtError {
