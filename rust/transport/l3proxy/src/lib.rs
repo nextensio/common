@@ -318,15 +318,8 @@ impl<'a> common::Transport for Socket<'a> {
         let mut interface = InterfaceBuilder::new(pktq)
             .ip_addrs(self.ip_addrs)
             .finalize();
-        if let Some(timestamp) = time_now() {
-            interface
-                .poll(&mut self.onesock, smoltcp::time::Instant::from(timestamp))
-                .ok();
-        } else {
-            // We have seen timestamp get fail on android when switching apps, not sure why,
-            // maybe because of issues with time going backwards or something when an goes
-            // into the background and comes back ? Drop the packets and move on
-            rx.clear();
-        }
+        interface
+            .poll(&mut self.onesock, smoltcp::time::Instant::from(time_now()))
+            .ok();
     }
 }

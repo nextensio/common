@@ -375,11 +375,17 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
     return ("".to_string(), 0, "".to_string());
 }
 
-pub fn time_now() -> Option<Instant> {
-    let result = panic::catch_unwind(|| Instant::now());
-    match result {
-        Ok(res) => Some(res),
-        Err(_) => None,
+pub fn time_now() -> Instant {
+    // We have seen timestamp get fail on android when switching apps, not sure why,
+    // maybe because of issues with time going backwards or something when an goes
+    // into the background and comes back ? Either ways its always transient and one
+    // more attempt usually succeeds
+    loop {
+        let result = panic::catch_unwind(|| Instant::now());
+        match result {
+            Ok(res) => return res,
+            Err(_) => {}
+        }
     }
 }
 #[cfg(test)]
