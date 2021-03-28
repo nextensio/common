@@ -1,7 +1,6 @@
 use common::{
     FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, MAXBUF, TCP, UDP,
 };
-use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
 use smoltcp::socket::TcpSocketBuffer;
 use smoltcp::socket::UdpSocket;
@@ -9,11 +8,12 @@ use smoltcp::socket::{UdpPacketMetadata, UdpSocketBuffer};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint};
 use smoltcp::Error;
+use smoltcp::{iface::InterfaceBuilder, time};
 use smoltcp::{
     phy::packetq::PacketQ, phy::Medium, socket::SocketHandle, socket::SocketRef, socket::SocketSet,
 };
-use std::collections::VecDeque;
 use std::net::Ipv4Addr;
+use std::{collections::VecDeque, time::SystemTime};
 
 // NOTE: See pub enum ManagedSlice in slice.rs in the smoltcp code,
 // the lifetime here is for the 'Borrowed' variant of that enum in
@@ -311,7 +311,6 @@ impl<'a> common::Transport for Socket<'a> {
     }
 
     fn poll(&mut self, rx: &mut VecDeque<(usize, Vec<u8>)>, tx: &mut VecDeque<(usize, Vec<u8>)>) {
-        let timestamp = Instant::now();
         let pktq = PacketQ::new(Medium::Ip, self.mtu, rx, tx, 0);
         // The below is some cycles that can be saved if smolltcp were to expose the
         // interface.device to us. So we dont have to keep building this each time, we
@@ -319,6 +318,11 @@ impl<'a> common::Transport for Socket<'a> {
         let mut interface = InterfaceBuilder::new(pktq)
             .ip_addrs(self.ip_addrs)
             .finalize();
-        interface.poll(&mut self.onesock, timestamp).ok();
+        interface
+            .poll(
+                &mut self.onesock,
+                smoltcp::time::Instant::from(SystemTime::now()),
+            )
+            .ok();
     }
 }
