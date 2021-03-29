@@ -2,8 +2,8 @@ use etherparse::InternetSlice::*;
 use etherparse::SlicedPacket;
 use etherparse::TransportSlice::*;
 use mio::{Poll, Token};
-use std::time::Duration;
-use std::{collections::VecDeque, fmt, net::Ipv4Addr, time::SystemTime, time::UNIX_EPOCH};
+use std::time::Instant;
+use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 
 pub mod nxthdr {
     include!(concat!(env!("OUT_DIR"), "/nxthdr.rs"));
@@ -375,35 +375,10 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
     return ("".to_string(), 0, "".to_string());
 }
 
-// Duration since epoch
-pub fn time_now() -> Duration {
-    // The std::time::SystemTime panics on getting a -1 return from clock_getttime
-    // on android when switching apps. And we dont seem to be able to catch_unwind
-    // that even though we have cargo.toml panic = 'unwind' .. So being forced to
-    // just do it here directly using libc, same thing that std::time does. We keep
-    // looping till clock_gettime succeeds - what we have seen is that its a rare
-    // failure just while switching through apps
-    #[cfg(target_os = "android")]
-    loop {
-        let mut t = libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
-        let mut ret = 0;
-        unsafe {
-            ret = libc::clock_gettime(libc::CLOCK_REALTIME, &mut t);
-        }
-        if ret == 0 {
-            let nsecs: i64 = (t.tv_sec * 1_000_000_000 + t.tv_nsec).into();
-            return Duration::from_nanos(nsecs as u64);
-        }
-    }
-    #[cfg(not(target_os = "android"))]
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => return d,
-        Err(_) => panic!("System time before Unix epoch!"),
-    }
+pub fn time_now() -> Instant {
+    Instant::now()
 }
+
 #[cfg(test)]
 mod test;
 
