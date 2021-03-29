@@ -231,7 +231,11 @@ pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
                 Some(Ipv4(value)) => {
                     key.sip = as_u32_be(&value.source_addr().octets());
                     let octets = &value.destination_addr().octets();
-                    key.dip = Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]).to_string();
+                    let v4addr = Ipv4Addr::new(octets[0], octets[1], octets[2], octets[3]);
+                    if v4addr.is_multicast() || v4addr.is_broadcast() {
+                        return None;
+                    }
+                    key.dip = v4addr.to_string();
                 }
                 _ => return None,
             }
