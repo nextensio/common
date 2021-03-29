@@ -1,6 +1,5 @@
 use common::{
-    time_now, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError,
-    MAXBUF, TCP, UDP,
+    FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, MAXBUF, TCP, UDP,
 };
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
@@ -319,7 +318,10 @@ impl<'a> common::Transport for Socket<'a> {
             .ip_addrs(self.ip_addrs)
             .finalize();
         interface
-            .poll(&mut self.onesock, smoltcp::time::Instant::from(time_now()))
+            .poll(
+                &mut self.onesock,
+                smoltcp::time::Instant::from(std::time::Instant::now()),
+            )
             .ok();
     }
 }

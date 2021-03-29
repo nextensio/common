@@ -375,10 +375,6 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
     return ("".to_string(), 0, "".to_string());
 }
 
-pub fn time_now() -> Instant {
-    Instant::now()
-}
-
 #[cfg(test)]
 mod test;
 
