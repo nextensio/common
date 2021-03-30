@@ -101,20 +101,17 @@ impl common::Transport for Fd {
         while !data.bufs.is_empty() {
             let ptr;
             let len;
-            let mut rewind_head = false;
+            let mut dcloned: Vec<u8> = vec![0x0, 0x0, 0x0, AF_INET];
             // IOS/Macos tun implementation appends a 4-bytes protocol information header
             // to each packet. IFF_NO_PI option can prevent this (TODO) ??
             if self.platform == 1 {
                 if data.headroom >= 4 {
-                    let dcloned: [u8; 4] = [0x0, 0x0, 0x0, AF_INET];
                     let d = data.bufs.first_mut().unwrap();
-                    data.headroom -= 4;
-                    d[data.headroom..data.headroom + 4].copy_from_slice(&dcloned);
-                    ptr = d[data.headroom..].as_ptr() as *const libc::c_void;
-                    len = d[data.headroom..].len();
-                    rewind_head = true;
+                    let h = data.headroom - 4;
+                    d[h..h + 4].copy_from_slice(&dcloned[0..]);
+                    ptr = d[h..].as_ptr() as *const libc::c_void;
+                    len = d[h..].len();
                 } else {
-                    let mut dcloned: Vec<u8> = vec![0x0, 0x0, 0x0, AF_INET];
                     let d = data.bufs.first().unwrap();
                     dcloned.extend_from_slice(&d[data.headroom..]);
                     ptr = dcloned[0..].as_ptr() as *const libc::c_void;
@@ -131,9 +128,6 @@ impl common::Transport for Fd {
                         let e = std::io::Error::last_os_error();
                         match e.kind() {
                             std::io::ErrorKind::WouldBlock => {
-                                if rewind_head {
-                                    data.headroom += 4;
-                                }
                                 return Err((
                                     Some(data),
                                     NxtError {
@@ -161,6 +155,9 @@ impl common::Transport for Fd {
                     }
                 }
             }
+            // The libc::write() might be referring to dcloned, we need it alive till
+            // libc::write is over with
+            drop(dcloned);
         }
         return Ok(());
     }
