@@ -4,7 +4,7 @@ use common::{
 };
 use http::Request;
 use mio::{Interest, Poll, Token};
-use native_tls::{Certificate, TlsConnector, TlsStream};
+use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
 use prost::Message;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -103,6 +103,36 @@ fn send_close(
     }
 }
 
+#[cfg(not(target_os = "ios"))]
+fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
+    let cert = match Certificate::from_pem(ca_cert) {
+        Err(e) => {
+            return Err(NxtError {
+                code: NxtErr::CONNECTION,
+                detail: format!("{}", e),
+            });
+        }
+        Ok(c) => c,
+    };
+    let mut tls = TlsConnector::builder();
+    tls.add_root_certificate(cert);
+
+    return Ok(tls);
+}
+
+// See the rust native-tls crate src/imp/security_framework.rs from_pem().
+// For whatever reason its not implemented for ios. I am assuming its not a
+// limitation but a missing support, we can add it ourselves at some point.
+// For now we are using letsencrypt legit certs to talk from agent to gateway,
+// so this is ok. But ideally we want the agent<-->gateway talk to be using
+// self signed certs signed by the gateway, at that point we need to fix this
+#[cfg(target_os = "ios")]
+fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
+    let mut tls = TlsConnector::builder();
+
+    return Ok(tls);
+}
+
 impl common::Transport for WebSession {
     fn dial(&mut self) -> Result<(), NxtError> {
         let svr = format!("{}:{}", self.server_name, self.port);
@@ -112,17 +142,10 @@ impl common::Transport for WebSession {
             request = request.header(k, v);
         }
 
-        let cert = match Certificate::from_pem(&self.ca_cert) {
-            Err(e) => {
-                return Err(NxtError {
-                    code: NxtErr::CONNECTION,
-                    detail: format!("{}", e),
-                });
-            }
-            Ok(c) => c,
+        let tls = match tls_with_cert(&self.ca_cert) {
+            Err(e) => return Err(e),
+            Ok(t) => t,
         };
-        let mut tls = TlsConnector::builder();
-        tls.add_root_certificate(cert);
         let connector = match tls.build() {
             Err(e) => {
                 return Err(NxtError {

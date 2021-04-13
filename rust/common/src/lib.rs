@@ -2,7 +2,6 @@ use etherparse::InternetSlice::*;
 use etherparse::SlicedPacket;
 use etherparse::TransportSlice::*;
 use mio::{Poll, Token};
-use std::time::Instant;
 use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 
 pub mod nxthdr {
