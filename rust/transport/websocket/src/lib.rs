@@ -103,7 +103,7 @@ fn send_close(
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(target_vendor = "apple"))]
 fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
     let cert = match Certificate::from_pem(ca_cert) {
         Err(e) => {
@@ -126,7 +126,7 @@ fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
 // For now we are using letsencrypt legit certs to talk from agent to gateway,
 // so this is ok. But ideally we want the agent<-->gateway talk to be using
 // self signed certs signed by the gateway, at that point we need to fix this
-#[cfg(target_os = "ios")]
+#[cfg(target_vendor = "apple")]
 fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
     let mut tls = TlsConnector::builder();
 
