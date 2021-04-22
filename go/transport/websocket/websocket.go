@@ -155,6 +155,9 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 		return 0, nil, 0, common.Err(common.GENERAL_ERR, nil)
 	}
 	datOff := hbytes + int(hdrLen)
+	if datOff > len(bufs[0]) {
+		return 0, nil, 0, common.Err(common.GENERAL_ERR, nil)
+	}
 	err = proto.Unmarshal(bufs[0][hbytes:datOff], data.hdr)
 	if err != nil {
 		return 0, nil, 0, common.Err(common.GENERAL_ERR, err)
