@@ -45,13 +45,14 @@ message NxtFlow {
     uint32 proto = 5;
     string sourceAgent = 6;
     string destAgent = 7;
-    string originAgent = 8;
+    string agentUuid = 8;
     enum FLOW_TYPE {
         L4 = 0;
         L3 = 1;
     }
     FLOW_TYPE type = 9;
     string usrattr = 10;
+    bool fromConnector = 11;
 }
 
 // The streamid and streamop is used only in cases where nextensio itself
