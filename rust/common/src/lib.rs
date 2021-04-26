@@ -257,7 +257,7 @@ pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
     return Some(key);
 }
 
-pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
+pub fn key_to_hdr(key: &FlowV4Key, service: &str) -> NxtHdr {
     let src = Ipv4Addr::new(
         ((key.sip >> 24) & 0xFF) as u8,
         ((key.sip >> 16) & 0xFF) as u8,
@@ -267,7 +267,7 @@ pub fn key_to_hdr(key: &FlowV4Key) -> NxtHdr {
 
     let mut flow: NxtFlow = NxtFlow::default();
     flow.proto = key.proto as u32;
-    flow.dest = key.dip.clone();
+    flow.dest = service.to_owned();
     flow.dport = key.dport as u32;
     flow.source = src.to_string();
     flow.sport = key.sport as u32;

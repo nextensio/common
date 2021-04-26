@@ -152,7 +152,7 @@ impl common::Transport for WebProxy {
                                         NxtBufs {
                                             // The very first time we detect the destination, we return an nxthdr
                                             // as some place to return that info, after that nxthdr is just None
-                                            hdr: Some(key_to_hdr(&self.key)),
+                                            hdr: Some(key_to_hdr(&self.key, &self.key.dip)),
                                             bufs: vec![],
                                             headroom: 0,
                                         },
@@ -166,7 +166,7 @@ impl common::Transport for WebProxy {
                                         NxtBufs {
                                             // The very first time we detect the destination, we return an nxthdr
                                             // as some place to return that info, after that nxthdr is just None
-                                            hdr: Some(key_to_hdr(&self.key)),
+                                            hdr: Some(key_to_hdr(&self.key, &self.key.dip)),
                                             bufs: vec![buf],
                                             headroom: 0,
                                         },
