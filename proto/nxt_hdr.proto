@@ -16,8 +16,8 @@ message NxtOnboard {
     repeated string services = 5; 
 }
 
-// source, dest, sport, dport, proto: standard five tuple associated with any flow. Any/all of these
-// can be empty based on whether that value is needed for that kind of flow etc..
+// source, dest, sport, dport, proto: standard five tuple associated with any flow. 
+// destSvc is the service name - like dest can be google IP say 1.1.1.1 and destSvc can be "google.com"
 //
 // sourceAgent: the service name of the source agent/connector that can be used in the return direction
 // to get back to the same agent/connector
@@ -30,29 +30,33 @@ message NxtOnboard {
 // say "route exactly to this particular service" by setting a specific value for flow.destAgent different
 // from flow.dest. The cluster always routes based on flow.destAgent field
 //
-// originAgent: This stores the information about which agent originated the flow. The source and dest of
-// the flow can keep changing, but the originAgent will never change. The agents/connectors are expected
-// to preserve this information and carry it across in every header.
+// agentUuid: The unique id of the agent originating the flow. This is used only in clusters and connectors,
+// agents dont fill it or use it
 //
 // type: two types of nextensio flows - raw l3 packets, tcp/udp terminated l4
 //
-// key, value: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
+// usrattr: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
+// This is used only in clusters. Agents and connector dont fill it or use it
+//
+// responseData: This indicates the direction of the data. The first data that creates the flow is
+// considered the request and the opposite direction is considered response.
 message NxtFlow {
     string source = 1;
     string dest = 2;
-    uint32 sport = 3;
-    uint32 dport = 4;
-    uint32 proto = 5;
-    string sourceAgent = 6;
-    string destAgent = 7;
-    string agentUuid = 8;
+    string destSvc = 3;
+    uint32 sport = 4;
+    uint32 dport = 5;
+    uint32 proto = 6;
+    string sourceAgent = 7;
+    string destAgent = 8;
+    string agentUuid = 9;
     enum FLOW_TYPE {
         L4 = 0;
         L3 = 1;
     }
-    FLOW_TYPE type = 9;
-    string usrattr = 10;
-    bool fromConnector = 11;
+    FLOW_TYPE type = 10;
+    string usrattr = 11;
+    bool responseData = 12;
 }
 
 // The streamid and streamop is used only in cases where nextensio itself

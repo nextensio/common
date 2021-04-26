@@ -267,7 +267,8 @@ pub fn key_to_hdr(key: &FlowV4Key, service: &str) -> NxtHdr {
 
     let mut flow: NxtFlow = NxtFlow::default();
     flow.proto = key.proto as u32;
-    flow.dest = service.to_owned();
+    flow.dest = key.dip.to_owned();
+    flow.dest_svc = service.to_owned();
     flow.dport = key.dport as u32;
     flow.source = src.to_string();
     flow.sport = key.sport as u32;
