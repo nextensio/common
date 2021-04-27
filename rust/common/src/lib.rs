@@ -9,7 +9,7 @@ pub mod nxthdr {
 }
 use nxthdr::{nxt_hdr::Hdr, NxtFlow, NxtHdr};
 
-pub const MAXBUF: usize = 2048;
+pub const MAXBUF: usize = (2048*3);
 pub const HEADROOM: usize = 500;
 pub const TCP: usize = 6;
 pub const UDP: usize = 17;

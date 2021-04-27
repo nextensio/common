@@ -33,7 +33,7 @@ const (
 const (
 	// We expect all the nextensio headers to fit in one buffer (the first buffer), so
 	// this size has to be larger than the largest nextensio header we ever expect
-	MAXBUF        = 2048
+	MAXBUF        = (2048*4)
 	MAXVARINT_BUF = 9
 )
 
