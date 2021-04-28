@@ -2,6 +2,7 @@ use etherparse::InternetSlice::*;
 use etherparse::SlicedPacket;
 use etherparse::TransportSlice::*;
 use mio::{Poll, Token};
+use std::sync::atomic::AtomicUsize;
 use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 
 pub mod nxthdr {
@@ -9,10 +10,18 @@ pub mod nxthdr {
 }
 use nxthdr::{nxt_hdr::Hdr, NxtFlow, NxtHdr};
 
-pub const MAXBUF: usize = (2048*3);
+static MAXBUF: AtomicUsize = AtomicUsize::new(2048 * 3);
 pub const HEADROOM: usize = 500;
 pub const TCP: usize = 6;
 pub const UDP: usize = 17;
+
+pub fn get_maxbuf() -> usize {
+    return MAXBUF.load(std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn set_maxbuf(maxbuf: usize) {
+    MAXBUF.store(maxbuf, std::sync::atomic::Ordering::Relaxed);
+}
 
 #[derive(Default, Hash, Eq, PartialEq)]
 pub struct FlowV4Key {

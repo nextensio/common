@@ -1,6 +1,6 @@
 use common::{
-    as_u32_be, key_to_hdr, parse_crnl, parse_host, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION,
-    NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType, Transport, MAXBUF,
+    as_u32_be, get_maxbuf, key_to_hdr, parse_crnl, parse_host, FlowV4Key, NxtBufs, NxtErr,
+    NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType, Transport,
 };
 use mio::{Interest, Poll, Token};
 use std::{io::Read, io::Write};
@@ -55,7 +55,7 @@ impl common::Transport for WebProxy {
                             return Ok(Box::new(WebProxy {
                                 closed: false,
                                 key,
-                                connect_buf: Some(vec![0; MAXBUF]),
+                                connect_buf: Some(vec![0; get_maxbuf()]),
                                 connect_parsed: false,
                                 socket: Some(RawStream::Tcp(stream)),
                                 buf_off: 0,
@@ -113,7 +113,7 @@ impl common::Transport for WebProxy {
                     buf = self.connect_buf.take().unwrap();
                     offset = self.buf_off;
                 } else {
-                    buf = vec![0; MAXBUF];
+                    buf = vec![0; get_maxbuf()];
                     offset = 0;
                 }
                 match stream.read(&mut buf[offset..]) {

@@ -1,4 +1,4 @@
-use common::{NxtBufs, NxtErr, NxtError, RegType, HEADROOM, MAXBUF};
+use common::{get_maxbuf, NxtBufs, NxtErr, NxtError, RegType, HEADROOM};
 use libc::c_void;
 use mio::unix::SourceFd;
 use mio::{Interest, Poll, Token};
@@ -49,12 +49,12 @@ impl common::Transport for Fd {
     }
 
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
-        let mut buf: Vec<u8> = Vec::with_capacity(MAXBUF);
+        let mut buf: Vec<u8> = Vec::with_capacity(get_maxbuf());
         unsafe {
             let mut headroom = HEADROOM;
             let ptr = buf.as_mut_ptr() as u64 + headroom as u64;
             let ptr = ptr as *mut c_void;
-            match libc::read(self.fd, ptr, MAXBUF - headroom) {
+            match libc::read(self.fd, ptr, get_maxbuf() - headroom) {
                 -1 => {
                     let e = std::io::Error::last_os_error();
                     match e.kind() {

@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gopakumarce/tlsx"
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -31,7 +31,7 @@ import (
 
 const (
 	TLS_HDRLEN   = 5
-	TCP_PARSE_SZ = 2 * common.MAXBUF
+	TCP_PARSE_SZ = 2048
 	// 100 msecs to get all the http request header / tls client hello.
 	// TODO: This will undergo more tweaking in future, for now setting it to a considerably high value
 	TCP_PARSE_TIMEOUT = 100 * time.Millisecond

@@ -33,10 +33,10 @@ const (
 const (
 	// We expect all the nextensio headers to fit in one buffer (the first buffer), so
 	// this size has to be larger than the largest nextensio header we ever expect
-	MAXBUF        = (2048*4)
 	MAXVARINT_BUF = 9
 )
 
+var MAXBUF = (2048 * 3)
 var LazyNoCopy = gopacket.DecodeOptions{Lazy: true, NoCopy: true}
 
 // The concept of a "parent" is mostly useful/used on the server side. On the server side,
