@@ -42,16 +42,9 @@ const (
 // just read in the entire data and then we can read it into our own smaller buffers. Note that
 // even if this humongous buffer ends up being smaller than our max data size, its just fine,
 // nothing goes wrong, gorilla just reads in multiple batches thats all.
-//
-// On the write front, we have an option to avoid the double copy and instead just let
-// the library call the write systemcall multiple times, by using the WriteNext API. And
-// that will avoid the double copy if it finds the data >= 2*buffer size, and hence the
-// reason why the half sized write buffer here. Again, im sure we will have to do quite a
-// bit of performance tuning work in the gorilla library, so these are by no means the
-// set-in-stone values, it can and will change as and when we learn more.
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  common.MAXBUF,
-	WriteBufferSize: common.MAXBUF / 2,
+	WriteBufferSize: common.MAXBUF,
 }
 
 // Streams will not get/send data of the same size always, so assuming we get

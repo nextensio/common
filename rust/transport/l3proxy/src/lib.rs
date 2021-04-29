@@ -36,8 +36,8 @@ impl<'a> Socket<'a> {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
-            let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-            let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            let rx = TcpSocketBuffer::new(vec![0; 2*get_maxbuf()]);
+            let tx = TcpSocketBuffer::new(vec![0; 2*get_maxbuf()]);
             let mut socket = TcpSocket::new(rx, tx);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
