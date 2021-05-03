@@ -1,6 +1,6 @@
 use common::{
-    get_maxbuf, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, TCP,
-    UDP,
+    get_maxbuf, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError,
+    NXT_OVERHEADS, TCP, UDP,
 };
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
@@ -29,6 +29,8 @@ pub struct Socket<'a> {
     handle: SocketHandle,
     proto: usize,
     endpoint: Option<IpEndpoint>,
+    has_rxbuf: bool,
+    has_txbuf: bool,
 }
 
 impl<'a> Socket<'a> {
@@ -36,9 +38,9 @@ impl<'a> Socket<'a> {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
-            let rx = TcpSocketBuffer::new(vec![0; 2*get_maxbuf()]);
-            let tx = TcpSocketBuffer::new(vec![0; 2*get_maxbuf()]);
-            let mut socket = TcpSocket::new(rx, tx);
+            let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            let mut socket = TcpSocket::new(rx, tx, NXT_OVERHEADS);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
@@ -63,6 +65,8 @@ impl<'a> Socket<'a> {
             handle,
             proto: tuple.proto,
             endpoint: None,
+            has_rxbuf: true,
+            has_txbuf: true,
         }
     }
 }
@@ -170,27 +174,33 @@ impl<'a> common::Transport for Socket<'a> {
                     detail: "".to_string(),
                 });
             }
-            let ret = sock.recv(|buffer| {
-                let recvd_len = buffer.len();
-                let data = buffer.to_vec();
-                (recvd_len, data)
-            });
+            let ret = sock.recv_buffer_owned();
             match ret {
-                Ok(data) => {
-                    return Ok((
-                        0,
-                        NxtBufs {
-                            hdr: None,
-                            bufs: vec![data],
-                            headroom: 0,
-                        },
-                    ))
+                Some((mut data, len)) => {
+                    self.has_rxbuf = false;
+                    if len > 0 {
+                        unsafe {
+                            data.set_len(len);
+                        }
+                        return Ok((
+                            0,
+                            NxtBufs {
+                                hdr: None,
+                                bufs: vec![data],
+                                headroom: 0,
+                            },
+                        ));
+                    } else {
+                        return Err(NxtError {
+                            code: EWOULDBLOCK,
+                            detail: "".to_string(),
+                        });
+                    }
                 }
-                Err(e) => {
-                    close_tcp(sock, &mut self.closed).ok();
+                None => {
                     return Err(NxtError {
-                        code: CONNECTION,
-                        detail: format!("{}", e),
+                        code: EWOULDBLOCK,
+                        detail: "".to_string(),
                     });
                 }
             }
@@ -275,6 +285,25 @@ impl<'a> common::Transport for Socket<'a> {
                 }
             }
             self.established = true;
+            if self.has_txbuf {
+                if sock.send_buffer_owned().is_none() {
+                    // The previous Tx data has not been ACKed yet, so dont bother sending new data
+                    return Err((
+                        Some(data),
+                        NxtError {
+                            code: EWOULDBLOCK,
+                            detail: "".to_string(),
+                        },
+                    ));
+                } else {
+                    self.has_txbuf = false;
+                }
+            }
+            if !self.has_txbuf {
+                let tbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+                sock.set_tx_buffer(tbuf);
+                self.has_txbuf = true;
+            }
             while !data.bufs.is_empty() {
                 let d = data.bufs.first().unwrap();
                 match sock.send_slice(&d[data.headroom..]) {
@@ -311,6 +340,17 @@ impl<'a> common::Transport for Socket<'a> {
     }
 
     fn poll(&mut self, rx: &mut VecDeque<(usize, Vec<u8>)>, tx: &mut VecDeque<(usize, Vec<u8>)>) {
+        if rx.len() != 0 {
+            if self.proto == common::TCP {
+                if !self.has_rxbuf {
+                    let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+                    let rbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+                    sock.set_rx_buffer(rbuf);
+                    self.has_rxbuf = true;
+                }
+            }
+        }
+
         let pktq = PacketQ::new(Medium::Ip, self.mtu, rx, tx, 0);
         // The below is some cycles that can be saved if smolltcp were to expose the
         // interface.device to us. So we dont have to keep building this each time, we
@@ -324,5 +364,23 @@ impl<'a> common::Transport for Socket<'a> {
                 smoltcp::time::Instant::from(std::time::Instant::now()),
             )
             .ok();
+
+        if tx.len() != 0 {
+            self.idle();
+        }
+    }
+
+    fn idle(&mut self) -> bool {
+        if self.proto == common::TCP {
+            if self.has_txbuf {
+                let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+                if sock.send_buffer_owned().is_some() {
+                    self.has_txbuf = false;
+                }
+            }
+            return !self.has_rxbuf && !self.has_txbuf;
+        } else {
+            return true;
+        }
     }
 }

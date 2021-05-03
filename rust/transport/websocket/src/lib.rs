@@ -9,7 +9,7 @@ use prost::Message;
 use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, u64};
-use tungstenite::WebSocket;
+use tungstenite::{protocol::WebSocketConfig, WebSocket};
 
 // The format of the data that gets packed in a websocket is as below
 // [length of nxt header][nxt header][payload]
@@ -157,7 +157,13 @@ impl common::Transport for WebSession {
         };
         let stream = std::net::TcpStream::connect(svr)?;
         let connected_stream = connector.connect(&self.server_name, stream.try_clone()?)?;
-        let socket = match tungstenite::client(request.body(()).unwrap(), connected_stream) {
+        let mut config = WebSocketConfig::default();
+        config.max_send_queue = Some(1);
+        let socket = match tungstenite::client::client_with_config(
+            request.body(()).unwrap(),
+            connected_stream,
+            Some(config),
+        ) {
             Ok((s, _)) => s,
             Err(e) => {
                 let err = format!("{}", e);
@@ -367,6 +373,11 @@ impl common::Transport for WebSession {
             }
         }
 
+        // TODO: There is a TON of room for optimizations here, the websocket library
+        // we use (or anything else thats out there) accepts only one large buffer with
+        // data starting at offset 0. So we have no choice but to copy the whole damn
+        // thing into another buffer. We need to modify the websocket libs to just take
+        // in whatever we pass
         let mut o = data.headroom;
         let mut datalen = 0;
         for d in data.bufs.iter() {
@@ -379,7 +390,8 @@ impl common::Transport for WebSession {
         hdr.streamop = StreamOp::Noop as i32;
         let hdrlen = hdr.encoded_len();
         let hbytes = varint_encode_len(hdrlen);
-        let mut buf = vec![0; hbytes + hdrlen + datalen];
+        let totlen = hbytes + hdrlen + datalen;
+        let mut buf = vec![0; totlen];
         varint_encode(hdrlen, &mut buf[0..hbytes]);
         let mut hdrbuf = &mut buf[hbytes..hbytes + hdrlen];
         hdr.encode(&mut hdrbuf).unwrap();
@@ -395,9 +407,22 @@ impl common::Transport for WebSession {
         match socket.write_message(tungstenite::Message::Binary(buf)) {
             Ok(_) => return Ok(()),
             Err(e) => match &e {
-                tungstenite::Error::Io(ee) if ee.kind() == std::io::ErrorKind::WouldBlock => {
+                tungstenite::Error::SendQueueFull(_) => {
                     return Err((
                         Some(data),
+                        NxtError {
+                            code: NxtErr::EWOULDBLOCK,
+                            detail: format!("{}", e),
+                        },
+                    ));
+                }
+                tungstenite::Error::Io(ee) if ee.kind() == std::io::ErrorKind::WouldBlock => {
+                    // The tungtesnite lib returns EWOULDBLOCK to indicate that the already queued
+                    // data is only partially sent, and we need to call write_message() again to
+                    // make sure its sent out. But if the error is EWOULDBLOCK, it would always
+                    // queue the message we passed in write_message(), hence we return None below
+                    return Err((
+                        None,
                         NxtError {
                             code: NxtErr::EWOULDBLOCK,
                             detail: format!("{}", e),
