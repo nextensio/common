@@ -285,20 +285,6 @@ impl<'a> common::Transport for Socket<'a> {
                 }
             }
             self.established = true;
-            if self.has_txbuf {
-                if sock.send_buffer_owned().is_none() {
-                    // The previous Tx data has not been ACKed yet, so dont bother sending new data
-                    return Err((
-                        Some(data),
-                        NxtError {
-                            code: EWOULDBLOCK,
-                            detail: "".to_string(),
-                        },
-                    ));
-                } else {
-                    self.has_txbuf = false;
-                }
-            }
             if !self.has_txbuf {
                 let tbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
                 sock.set_tx_buffer(tbuf);
@@ -339,16 +325,18 @@ impl<'a> common::Transport for Socket<'a> {
         Ok(())
     }
 
+    // The iphone is EXTREMELY stingy with memory, the entire datapath including code and data
+    // has to fit in 15Mb. So we have no option but to be very rough with reclaiming unused memory
     fn poll(&mut self, rx: &mut VecDeque<(usize, Vec<u8>)>, tx: &mut VecDeque<(usize, Vec<u8>)>) {
-        if rx.len() != 0 {
-            if self.proto == common::TCP {
-                if !self.has_rxbuf {
-                    let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-                    let rbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-                    sock.set_rx_buffer(rbuf);
-                    self.has_rxbuf = true;
-                }
-            }
+        let tcp = self.proto == common::TCP;
+        // There is some packet going into tcp, it might have data or it might be just ACK
+        // with no data, we dont know that here (well we can if we parse), we give the flow
+        // a buffer anyways. We will take it back if there was no data written to it.
+        if tcp && rx.len() != 0 && !self.has_rxbuf {
+            let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+            let rbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            sock.set_rx_buffer(rbuf);
+            self.has_rxbuf = true;
         }
 
         let pktq = PacketQ::new(Medium::Ip, self.mtu, rx, tx, 0);
@@ -365,8 +353,22 @@ impl<'a> common::Transport for Socket<'a> {
             )
             .ok();
 
-        if tx.len() != 0 {
-            self.idle();
+        if tcp {
+            // Some packets are generated to be transmitted, if all of the tcp data has
+            // been transmitted, reclaim the buffers
+            let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+            if tx.len() != 0 && self.has_txbuf {
+                if sock.send_buffer_owned().is_some() {
+                    self.has_txbuf = false;
+                }
+            }
+            if !sock.recv_has_data() {
+                // Maybe we just gave an ACK with no data, to the socket. The receive buffers
+                // are empty, reclaim them
+                if sock.recv_buffer_owned().is_some() {
+                    self.has_rxbuf = false;
+                }
+            }
         }
     }
 
