@@ -174,7 +174,7 @@ impl<'a> common::Transport for Socket<'a> {
                     detail: "".to_string(),
                 });
             }
-            let ret = sock.recv_buffer_owned();
+            let ret = sock.recv_buffer_owned(false);
             match ret {
                 Some((mut data, len)) => {
                     self.has_rxbuf = false;
@@ -358,25 +358,32 @@ impl<'a> common::Transport for Socket<'a> {
             // been transmitted, reclaim the buffers
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
             if tx.len() != 0 && self.has_txbuf {
-                if sock.send_buffer_owned().is_some() {
+                if sock.send_buffer_owned(false).is_some() {
                     self.has_txbuf = false;
                 }
             }
             if !sock.recv_has_data() {
                 // Maybe we just gave an ACK with no data, to the socket. The receive buffers
                 // are empty, reclaim them
-                if sock.recv_buffer_owned().is_some() {
+                if sock.recv_buffer_owned(false).is_some() {
                     self.has_rxbuf = false;
                 }
             }
         }
     }
 
-    fn idle(&mut self) -> bool {
+    fn idle(&mut self, force: bool) -> bool {
         if self.proto == common::TCP {
+            let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+            if force {
+                sock.send_buffer_owned(true);
+                sock.recv_buffer_owned(true);
+                self.has_rxbuf = false;
+                self.has_txbuf = false;
+                return true;
+            }
             if self.has_txbuf {
-                let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-                if sock.send_buffer_owned().is_some() {
+                if sock.send_buffer_owned(false).is_some() {
                     self.has_txbuf = false;
                 }
             }

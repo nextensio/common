@@ -624,7 +624,7 @@ dependencies = [
 [[package]]
 name = "smoltcp"
 version = "0.6.0"
-source = "git+https://github.com/gopakumarce/smoltcp.git?branch=gopa-smoltcp#ba93864e2dcb7e8f248fc3a4ccd88948f6a762c6"
+source = "git+https://github.com/gopakumarce/smoltcp.git?branch=gopa-smoltcp#3a8905f9b5e46a4548d43a07640675f006ef6183"
 dependencies = [
  "bitflags",
  "byteorder",

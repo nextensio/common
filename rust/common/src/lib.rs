@@ -190,7 +190,10 @@ pub trait Transport {
     // This is an optional implementation to ask the transport to switch to idle mode,
     // which means the transport has not been used for some time and it can choose to
     // do stuff like free its caches etc.. Returns true if switch to idle mode was succesful
-    fn idle(&mut self) -> bool {
+    // If the force is set to true, then the flow is going to be closed/destroyed and hence
+    // all the resources have to be released right away. It gets released when the flow gets
+    // cleaned up anyways, this is just to speed up that process
+    fn idle(&mut self, _force: bool) -> bool {
         true
     }
 }
