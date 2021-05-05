@@ -154,6 +154,10 @@ impl<'a> common::Transport for Socket<'a> {
             if !sock.may_recv() || !sock.may_send() {
                 if self.established {
                     // TODO: we treat half closed as an error, do we really need to support that ??
+                    // I dont think any sane application relies on half close, see article below
+                    // https://www.excentis.com/blog/tcp-half-close-cool-feature-now-broken
+                    // We will have to do some work here and also how we handle flow_close() in agent
+                    // if we have to deal with half closed tcp sessions
                     close_tcp(sock, &mut self.closed).ok();
                     return Err(NxtError {
                         code: CONNECTION,

@@ -2,61 +2,67 @@ syntax = "proto3";
 package nxthdr;
 option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 
-
-// agent: true if its an agent, false for connector. 
+// agent: true if its an agent, false for connector.
 // userid: username of the agent/connector
-// uuid: a unique identifier for the agent, if the same userid has multiple devices
+// uuid: a unique identifier for the agent, if the same userid has multiple
+// devices
 //       usually just a uuid.UUID suffices to be unique
 // services: the service names advertised by this agent/connector
 message NxtOnboard {
-    bool agent = 1;
-    string userid = 2;
-    string uuid = 3;
-    string accessToken = 4;
-    repeated string services = 5; 
+  bool agent = 1;
+  string userid = 2;
+  string uuid = 3;
+  string accessToken = 4;
+  repeated string services = 5;
 }
 
-// source, dest, sport, dport, proto: standard five tuple associated with any flow. 
-// destSvc is the service name - like dest can be google IP say 1.1.1.1 and destSvc can be "google.com"
+// source, dest, sport, dport, proto: standard five tuple associated with any
+// flow. destSvc is the service name - like dest can be google IP say 1.1.1.1
+// and destSvc can be "google.com"
 //
-// sourceAgent: the service name of the source agent/connector that can be used in the return direction
-// to get back to the same agent/connector
+// sourceAgent: the service name of the source agent/connector that can be used
+// in the return direction to get back to the same agent/connector
 //
-// destAgent: the service name of the dest agent/connector. This field may (or may not) be the same as 
-// the "dest" field. For example if the dest field is a private service like kismis.org, the destAgent
-// will be the same as kismis.org. But if the dest field is say google.com, then the destAgent can be
-// set to say default-internet. In other words, destAgent gives the sender (agent/connector) flexibility
-// to either say "route to whoever provides flow.dest" by setting flow.destAgent same as flow.dest OR to
-// say "route exactly to this particular service" by setting a specific value for flow.destAgent different
-// from flow.dest. The cluster always routes based on flow.destAgent field
+// destAgent: the service name of the dest agent/connector. This field may (or
+// may not) be the same as the "dest" field. For example if the dest field is a
+// private service like kismis.org, the destAgent will be the same as
+// kismis.org. But if the dest field is say google.com, then the destAgent can
+// be set to say default-internet. In other words, destAgent gives the sender
+// (agent/connector) flexibility to either say "route to whoever provides
+// flow.dest" by setting flow.destAgent same as flow.dest OR to say "route
+// exactly to this particular service" by setting a specific value for
+// flow.destAgent different from flow.dest. The cluster always routes based on
+// flow.destAgent field
 //
-// agentUuid: The unique id of the agent originating the flow. This is used only in clusters and connectors,
-// agents dont fill it or use it
+// agentUuid: The unique id of the agent originating the flow. This is used only
+// in clusters and connectors, agents dont fill it or use it
 //
 // type: two types of nextensio flows - raw l3 packets, tcp/udp terminated l4
 //
-// usrattr: set of extra attributes for the flow - typically filled in the cluster after OPA lookup
-// This is used only in clusters. Agents and connector dont fill it or use it
+// usrattr: set of extra attributes for the flow - typically filled in the
+// cluster after OPA lookup This is used only in clusters. Agents and connector
+// dont fill it or use it
 //
-// responseData: This indicates the direction of the data. The first data that creates the flow is
-// considered the request and the opposite direction is considered response.
+// responseData: This indicates the direction of the data. The first data that
+// creates the flow is considered the request and the opposite direction is
+// considered response.
 message NxtFlow {
-    string source = 1;
-    string dest = 2;
-    string destSvc = 3;
-    uint32 sport = 4;
-    uint32 dport = 5;
-    uint32 proto = 6;
-    string sourceAgent = 7;
-    string destAgent = 8;
-    string agentUuid = 9;
-    enum FLOW_TYPE {
-        L4 = 0;
-        L3 = 1;
-    }
-    FLOW_TYPE type = 10;
-    string usrattr = 11;
-    bool responseData = 12;
+  string source = 1;
+  string dest = 2;
+  string destSvc = 3;
+  uint32 sport = 4;
+  uint32 dport = 5;
+  uint32 proto = 6;
+  string sourceAgent = 7;
+  string destAgent = 8;
+  string agentUuid = 9;
+  enum FLOW_TYPE {
+    L4 = 0;
+    L3 = 1;
+  }
+  FLOW_TYPE type = 10;
+  string usrattr = 11;
+  bool responseData = 12;
 }
 
 // The streamid and streamop is used only in cases where nextensio itself
@@ -66,15 +72,15 @@ message NxtFlow {
 // sent on wire by protobuf)
 // An Nxt message can be either an onboarding message or data for a user flow
 message NxtHdr {
-    uint64 streamid = 1;
-    enum STREAM_OP {
-        NOOP = 0;
-        CLOSE = 1;
-        FLOW_CONTROL = 2;
-    }
-    STREAM_OP streamop = 2;
-    oneof hdr {
-        NxtOnboard onboard = 3;
-        NxtFlow flow = 4;
-    }
+  uint64 streamid = 1;
+  enum STREAM_OP {
+    NOOP = 0;
+    CLOSE = 1;
+    FLOW_CONTROL = 2;
+  }
+  STREAM_OP streamop = 2;
+  oneof hdr {
+    NxtOnboard onboard = 3;
+    NxtFlow flow = 4;
+  }
 }

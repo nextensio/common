@@ -56,7 +56,7 @@ var upgrader = websocket.Upgrader{
 // NOTE: Its obvious why we cant set this number to randomly lage values, because obviously
 // that means we will queue up a lot of data in memory. So this will impact how many streams
 // we can have on the system given the memory we have
-const dataQlen = 100
+const dataQlen = 2
 
 // The format of a data stream sent on this transport is as follows
 // [protobuf header length][protobuf headers] [payload].
