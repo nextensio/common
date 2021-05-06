@@ -1,6 +1,6 @@
 use common::{
-    get_maxbuf, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError,
-    NXT_OVERHEADS, TCP, UDP,
+    get_maxbuf, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, TCP,
+    UDP,
 };
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
@@ -34,13 +34,13 @@ pub struct Socket<'a> {
 }
 
 impl<'a> Socket<'a> {
-    pub fn new_client(tuple: &FlowV4Key, mtu: usize) -> Self {
+    pub fn new_client(tuple: &FlowV4Key, mtu: usize, overheads: usize) -> Self {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
             let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
             let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-            let mut socket = TcpSocket::new(rx, tx, NXT_OVERHEADS);
+            let mut socket = TcpSocket::new(rx, tx, overheads);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
