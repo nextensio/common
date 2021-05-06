@@ -137,6 +137,26 @@ impl common::Transport for Fd {
                                 ));
                             }
                             _ => {
+                                if let Some(errno) = e.raw_os_error() {
+                                    if errno == 105 {
+                                        // ENOBUFS: Not sure why rust doesnt include this in the
+                                        // ErrorKind::Wouldblock category. Android phones complain about
+                                        // this if we go close to the interface mtu
+                                        return Err((
+                                            Some(data),
+                                            NxtError {
+                                                code: NxtErr::EWOULDBLOCK,
+                                                detail: "".to_string(),
+                                            },
+                                        ));
+                                    } else if errno == 90 {
+                                        // EMSGSIZE: Well we should never end up here with a packet larger
+                                        // than the interface mtu. All we can do is drop the packet and log
+                                        // a message
+                                        return Ok(());
+                                    }
+                                }
+                                // All other errors are bad (till we investigate and find they are not!).
                                 self.close(0).ok();
                                 return Err((
                                     None,
