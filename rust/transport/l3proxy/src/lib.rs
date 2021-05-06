@@ -25,7 +25,7 @@ pub struct Socket<'a> {
     closed: bool,
     established: bool,
     ip_addrs: [IpCidr; 1],
-    mtu: usize,
+    tx_mtu: usize,
     handle: SocketHandle,
     proto: usize,
     endpoint: Option<IpEndpoint>,
@@ -34,21 +34,21 @@ pub struct Socket<'a> {
 }
 
 impl<'a> Socket<'a> {
-    pub fn new_client(tuple: &FlowV4Key, mtu: usize, overheads: usize) -> Self {
+    pub fn new_client(tuple: &FlowV4Key, rx_mtu: usize, tx_mtu: usize) -> Self {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
             let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
             let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-            let mut socket = TcpSocket::new(rx, tx, overheads);
+            let mut socket = TcpSocket::new(rx, tx, rx_mtu);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
             // Smoltcp needs a "continguous" buffer in the case of udp, see enqueue() in
             // packet_buffer.rs in smoltcp. So we need a size of 2*mtu so that there is
             // always space for one full packet all the time
-            let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * mtu]);
-            let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * mtu]);
+            let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * rx_mtu]);
+            let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * rx_mtu]);
             let mut socket = UdpSocket::new(rx, tx);
             socket.bind(tuple.dport).unwrap();
             handle = onesock.add(socket);
@@ -61,7 +61,7 @@ impl<'a> Socket<'a> {
             closed: false,
             established: false,
             ip_addrs: [IpCidr::new(dest, 32)],
-            mtu,
+            tx_mtu,
             handle,
             proto: tuple.proto,
             endpoint: None,
@@ -339,7 +339,7 @@ impl<'a> common::Transport for Socket<'a> {
             self.has_rxbuf = true;
         }
 
-        let pktq = PacketQ::new(Medium::Ip, self.mtu, rx, tx, 0);
+        let pktq = PacketQ::new(Medium::Ip, self.tx_mtu, rx, tx, 0);
         // The below is some cycles that can be saved if smolltcp were to expose the
         // interface.device to us. So we dont have to keep building this each time, we
         // can keep it built and just swap out the queues here
