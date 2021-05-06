@@ -38,17 +38,14 @@ impl<'a> Socket<'a> {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
-            let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-            let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            let rx = TcpSocketBuffer::new(vec![]);
+            let tx = TcpSocketBuffer::new(vec![]);
             let mut socket = TcpSocket::new(rx, tx, rx_mtu);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
-            // Smoltcp needs a "continguous" buffer in the case of udp, see enqueue() in
-            // packet_buffer.rs in smoltcp. So we need a size of 2*mtu so that there is
-            // always space for one full packet all the time
-            let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * rx_mtu]);
-            let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * rx_mtu]);
+            let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![]);
+            let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![]);
             let mut socket = UdpSocket::new(rx, tx);
             socket.bind(tuple.dport).unwrap();
             handle = onesock.add(socket);
@@ -65,8 +62,8 @@ impl<'a> Socket<'a> {
             handle,
             proto: tuple.proto,
             endpoint: None,
-            has_rxbuf: true,
-            has_txbuf: true,
+            has_rxbuf: false,
+            has_txbuf: false,
         }
     }
 }
@@ -119,35 +116,38 @@ impl<'a> common::Transport for Socket<'a> {
         }
         if self.proto == common::UDP {
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-            match sock.recv() {
-                Ok((data, endpoint)) => {
-                    if self.endpoint.is_none() {
-                        self.endpoint = Some(endpoint);
-                    }
-                    return Ok((
-                        0,
-                        NxtBufs {
-                            hdr: None,
-                            bufs: vec![data.to_vec()],
-                            headroom: 0,
-                        },
-                    ));
-                }
-                Err(e) => match e {
-                    Error::Exhausted => {
+            let ret = sock.recv_buffer_owned();
+            match ret {
+                Some((mut data, len, endpoint)) => {
+                    self.has_rxbuf = false;
+                    if len > 0 {
+                        unsafe {
+                            data.set_len(len);
+                        }
+                        if self.endpoint.is_none() {
+                            self.endpoint = Some(endpoint);
+                        }
+                        return Ok((
+                            0,
+                            NxtBufs {
+                                hdr: None,
+                                bufs: vec![data.to_vec()],
+                                headroom: 0,
+                            },
+                        ));
+                    } else {
                         return Err(NxtError {
                             code: EWOULDBLOCK,
                             detail: "".to_string(),
                         });
                     }
-                    _ => {
-                        close_udp(sock, &mut self.closed).ok();
-                        return Err(NxtError {
-                            code: CONNECTION,
-                            detail: format!("{}", e),
-                        });
-                    }
-                },
+                }
+                None => {
+                    return Err(NxtError {
+                        code: EWOULDBLOCK,
+                        detail: "".to_string(),
+                    });
+                }
             }
         } else {
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
@@ -219,6 +219,14 @@ impl<'a> common::Transport for Socket<'a> {
         }
         if self.proto == UDP {
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
+            // For udp, we get a new buffer for each new packet, we cant keep appending
+            // to the old buffer like we do in tcp because udp is not a "stream" transport.
+            // If the old buffer had data, it just gets freed when we set the new one, so
+            // we lose the data, too bad - but it wont happen because the caller usually transmits
+            // as soon as it has data
+            let tbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; get_maxbuf()]);
+            sock.set_tx_buffer(tbuf);
+            self.has_txbuf = true;
             if let Some(endpoint) = self.endpoint.as_ref() {
                 while !data.bufs.is_empty() {
                     let d = data.bufs.first().unwrap();
@@ -329,14 +337,25 @@ impl<'a> common::Transport for Socket<'a> {
     // has to fit in 15Mb. So we have no option but to be very rough with reclaiming unused memory
     fn poll(&mut self, rx: &mut VecDeque<(usize, Vec<u8>)>, tx: &mut VecDeque<(usize, Vec<u8>)>) {
         let tcp = self.proto == common::TCP;
-        // There is some packet going into tcp, it might have data or it might be just ACK
+        // There is some packet going into tcp/udp, it might have data or it might be just tcp ACK
         // with no data, we dont know that here (well we can if we parse), we give the flow
-        // a buffer anyways. We will take it back if there was no data written to it.
-        if tcp && rx.len() != 0 && !self.has_rxbuf {
-            let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-            let rbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-            sock.set_rx_buffer(rbuf);
-            self.has_rxbuf = true;
+        // a buffer anyways. We will take it back if there was no data written to it. For udp
+        // if there is a packet then there is data for sure.
+        if tcp {
+            if rx.len() != 0 && !self.has_rxbuf {
+                let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+                let rbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+                sock.set_rx_buffer(rbuf);
+                self.has_rxbuf = true;
+            }
+        } else {
+            if rx.len() != 0 && !self.has_rxbuf {
+                let mut sock = self.onesock.get::<UdpSocket>(self.handle);
+                let rbuf =
+                    UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; get_maxbuf()]);
+                sock.set_rx_buffer(rbuf);
+                self.has_rxbuf = true;
+            }
         }
 
         let pktq = PacketQ::new(Medium::Ip, self.tx_mtu, rx, tx, 0);
@@ -357,7 +376,7 @@ impl<'a> common::Transport for Socket<'a> {
             // Some packets are generated to be transmitted, if all of the tcp data has
             // been transmitted, reclaim the buffers
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-            if tx.len() != 0 && self.has_txbuf {
+            if self.has_txbuf {
                 if sock.send_buffer_owned(false).is_some() {
                     self.has_txbuf = false;
                 }
@@ -368,6 +387,17 @@ impl<'a> common::Transport for Socket<'a> {
                 if sock.recv_buffer_owned(false).is_some() {
                     self.has_rxbuf = false;
                 }
+            }
+        } else {
+            // udp data doesnt have to wait for any conditions to be sent, as soon as poll
+            // is done, the udp data will be packet-ized in the tx packet queue and we can
+            // dispose off the data buffer
+            let mut sock = self.onesock.get::<UdpSocket>(self.handle);
+            sock.send_buffer_owned();
+            self.has_txbuf = false;
+            if !sock.recv_has_data() {
+                sock.recv_buffer_owned();
+                self.has_rxbuf = false;
             }
         }
     }
@@ -382,14 +412,17 @@ impl<'a> common::Transport for Socket<'a> {
                 self.has_txbuf = false;
                 return true;
             }
-            if self.has_txbuf {
-                if sock.send_buffer_owned(false).is_some() {
-                    self.has_txbuf = false;
-                }
-            }
             return !self.has_rxbuf && !self.has_txbuf;
         } else {
-            return true;
+            let mut sock = self.onesock.get::<UdpSocket>(self.handle);
+            if force {
+                sock.send_buffer_owned();
+                sock.recv_buffer_owned();
+                self.has_rxbuf = false;
+                self.has_txbuf = false;
+                return true;
+            }
+            return !self.has_rxbuf && !self.has_txbuf;
         }
     }
 }
