@@ -37,13 +37,18 @@ impl<'a> Socket<'a> {
     pub fn new_client(tuple: &FlowV4Key, rx_mtu: usize, tx_mtu: usize) -> Self {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
+        let mut has_rxbuf = true;
+        let mut has_txbuf = true;
         if tuple.proto == TCP {
-            let rx = TcpSocketBuffer::new(vec![]);
-            let tx = TcpSocketBuffer::new(vec![]);
+            let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
             let mut socket = TcpSocket::new(rx, tx, rx_mtu);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
+            // We will allocate buffers when needed for udp, ie when packet arrives
+            has_rxbuf = false;
+            has_txbuf = false;
             let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![]);
             let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![]);
             let mut socket = UdpSocket::new(rx, tx);
@@ -62,8 +67,8 @@ impl<'a> Socket<'a> {
             handle,
             proto: tuple.proto,
             endpoint: None,
-            has_rxbuf: false,
-            has_txbuf: false,
+            has_rxbuf,
+            has_txbuf,
         }
     }
 }
