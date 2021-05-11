@@ -25,6 +25,7 @@ pub struct Socket<'a> {
     closed: bool,
     established: bool,
     ip_addrs: [IpCidr; 1],
+    rx_mtu: usize,
     tx_mtu: usize,
     handle: SocketHandle,
     proto: usize,
@@ -63,6 +64,7 @@ impl<'a> Socket<'a> {
             closed: false,
             established: false,
             ip_addrs: [IpCidr::new(dest, 32)],
+            rx_mtu,
             tx_mtu,
             handle,
             proto: tuple.proto,
@@ -229,7 +231,8 @@ impl<'a> common::Transport for Socket<'a> {
             // If the old buffer had data, it just gets freed when we set the new one, so
             // we lose the data, too bad - but it wont happen because the caller usually transmits
             // as soon as it has data
-            let tbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; get_maxbuf()]);
+            let tbuf =
+                UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * self.rx_mtu]);
             sock.set_tx_buffer(tbuf);
             self.has_txbuf = true;
             if let Some(endpoint) = self.endpoint.as_ref() {
@@ -357,7 +360,7 @@ impl<'a> common::Transport for Socket<'a> {
             if rx.len() != 0 && !self.has_rxbuf {
                 let mut sock = self.onesock.get::<UdpSocket>(self.handle);
                 let rbuf =
-                    UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; get_maxbuf()]);
+                    UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * self.rx_mtu]);
                 sock.set_rx_buffer(rbuf);
                 self.has_rxbuf = true;
             }

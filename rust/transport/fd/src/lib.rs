@@ -9,16 +9,18 @@ pub struct Fd {
     fd: i32,
     //os platform: linux including android/desktops = 0, apple = 1
     platform: usize,
+    mtu: usize,
     closed: bool,
 }
 
 // This is assumed to be a non-blocking fd
 
 impl Fd {
-    pub fn new_client(fd: i32, platform: usize) -> Self {
+    pub fn new_client(fd: i32, platform: usize, mtu: usize) -> Self {
         Fd {
             fd,
             platform,
+            mtu,
             closed: false,
         }
     }
@@ -49,7 +51,7 @@ impl common::Transport for Fd {
     }
 
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
-        let mut buf: Vec<u8> = Vec::with_capacity(get_maxbuf());
+        let mut buf: Vec<u8> = Vec::with_capacity(self.mtu);
         unsafe {
             let mut headroom = HEADROOM;
             let ptr = buf.as_mut_ptr() as u64 + headroom as u64;
