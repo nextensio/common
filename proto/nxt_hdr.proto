@@ -57,6 +57,9 @@ message NxtFlow {
     FLOW_TYPE type = 10;
     string usrattr = 11;
     bool responseData = 12;
+    string userCluster = 13;
+    string userPod = 14;
+    string userDeploy = 15;
 }
 
 // The streamid and streamop is used only in cases where nextensio itself
