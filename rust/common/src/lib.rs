@@ -196,6 +196,8 @@ pub trait Transport {
     fn idle(&mut self, _force: bool) -> bool {
         true
     }
+
+    fn write_ready(&mut self) {}
 }
 
 pub fn varint_decode(bytes: &[u8]) -> (usize, usize) {

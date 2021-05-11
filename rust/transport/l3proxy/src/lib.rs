@@ -433,4 +433,11 @@ impl<'a> common::Transport for Socket<'a> {
             return !self.has_rxbuf && !self.has_txbuf;
         }
     }
+
+    fn write_ready(&mut self) {
+        if self.proto == common::TCP {
+            let mut sock = self.onesock.get::<TcpSocket>(self.handle);
+            sock.reset_delayed_ack();
+        }
+    }
 }
