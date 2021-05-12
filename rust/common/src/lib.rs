@@ -18,10 +18,6 @@ static MAXBUF: AtomicUsize = AtomicUsize::new(2048 * 3);
 pub const HEADROOM: usize = 0;
 pub const TCP: usize = 6;
 pub const UDP: usize = 17;
-// The goal here is that we want to keep the nxt headers PLUS data to be within 64K
-// bytes. Even if the nxt header exceeds 2K, as long as the total remains under 64K
-// we should be fine. This is used to adjust the mss values advertised in tcp syn
-pub const NXT_OVERHEADS: usize = 2048;
 
 pub fn get_maxbuf() -> usize {
     return MAXBUF.load(std::sync::atomic::Ordering::Relaxed);

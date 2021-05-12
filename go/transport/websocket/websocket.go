@@ -40,11 +40,11 @@ const (
 // they should be able to just read into the buffers we provide. We might have to fix
 // that some day. So till then, we provide a humongous buffer into which gorilla can
 // just read in the entire data and then we can read it into our own smaller buffers. Note that
-// even if this humongous buffer ends up being smaller than our max data size, its just fine,
+// even if the buffer sizes here ends up being smaller than our max data size, its just fine,
 // nothing goes wrong, gorilla just reads in multiple batches thats all.
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  common.MAXBUF,
-	WriteBufferSize: common.MAXBUF/2,
+	WriteBufferSize: common.MAXBUF,
 }
 
 // Streams will not get/send data of the same size always, so assuming we get

@@ -34,12 +34,6 @@ const (
 	// We expect all the nextensio headers to fit in one buffer (the first buffer), so
 	// this size has to be larger than the largest nextensio header we ever expect
 	MAXVARINT_BUF = 9
-	// The goal here is that we want to keep the nxt headers PLUS data to be within 64K
-	// bytes. Even if the nxt header exceeds 2K, as long as the total remains under 64K
-	// we should be fine. This is used to adjust the mss values advertised in tcp syn
-	NXT_OVERHEADS = 2048
-	// Nxt headers + ip tcp headers etc..
-	NXT_TOTAL_OVERHEADS = NXT_OVERHEADS + 50
 )
 
 var MAXBUF = (2048 * 3)

@@ -91,14 +91,7 @@ func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 		return nil, nil, common.Err(common.CONNECTION_ERR, nil)
 	}
 	buf := make([]byte, common.MAXBUF)
-	// This is for the benefit of the agent, so the agent does not have to split
-	// anything in case where agent and connectors are all using the same buffer sizes
-	// So in this case the agent can receive this entire data in one buffer and send
-	// it to the agent OS (iphone, android etc..) as one single buffer. But of course
-	// if the buffer sizes are different across agent and connector, then the code will
-	// still work, but the agent might have to send this data to its OS as seperate
-	// tcp segments
-	r, err := n.conn.Read(buf[0 : common.MAXBUF-common.NXT_TOTAL_OVERHEADS])
+	r, err := n.conn.Read(buf[0:common.MAXBUF])
 	if err != nil {
 		if err != io.EOF || r == 0 {
 			return nil, nil, common.Err(common.CONNECTION_ERR, err)
