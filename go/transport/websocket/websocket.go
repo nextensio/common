@@ -44,7 +44,7 @@ const (
 // nothing goes wrong, gorilla just reads in multiple batches thats all.
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  common.MAXBUF,
-	WriteBufferSize: common.MAXBUF,
+	WriteBufferSize: common.MAXBUF/2,
 }
 
 // Streams will not get/send data of the same size always, so assuming we get
