@@ -1,8 +1,10 @@
 use common::{
-    as_u32_be, get_maxbuf, key_to_hdr, parse_crnl, parse_host, FlowV4Key, NxtBufs, NxtErr,
-    NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType, Transport,
+    as_u32_be, key_to_hdr, parse_crnl, parse_host, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION,
+    NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType, Transport,
 };
 use mio::{Interest, Poll, Token};
+use object_pool::{Pool, Reusable};
+use std::sync::Arc;
 use std::{io::Read, io::Write};
 
 const HTTP_OK: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
@@ -11,15 +13,16 @@ pub struct WebProxy {
     closed: bool,
     key: FlowV4Key,
     socket: Option<RawStream>,
-    connect_buf: Option<Vec<u8>>,
+    connect_buf: Option<Reusable<Vec<u8>>>,
     connect_parsed: bool,
     buf_off: usize,
+    pool: Arc<Pool<Vec<u8>>>,
 }
 
 // this is a non-blocking version, there is no option for this to work in a
 // blocking mode as of now.
 impl WebProxy {
-    pub fn new_client(port: usize) -> WebProxy {
+    pub fn new_client(port: usize, pool: Arc<Pool<Vec<u8>>>) -> WebProxy {
         let mut key = FlowV4Key::default();
         key.sport = port as u16;
         WebProxy {
@@ -29,6 +32,7 @@ impl WebProxy {
             connect_buf: None,
             connect_parsed: false,
             buf_off: 0,
+            pool,
         }
     }
 }
@@ -43,6 +47,15 @@ impl common::Transport for WebProxy {
         match self.socket.as_mut().unwrap() {
             RawStream::TcpLis(listener) => match listener.accept() {
                 Ok((stream, addr)) => {
+                    let connect_buf = match common::pool_get(self.pool.clone()) {
+                        Some(b) => Some(b),
+                        None => {
+                            return Err(NxtError {
+                                code: NxtErr::CONNECTION,
+                                detail: "".to_string(),
+                            });
+                        }
+                    };
                     match addr.ip() {
                         std::net::IpAddr::V4(v4addr) => {
                             let key = FlowV4Key {
@@ -55,10 +68,11 @@ impl common::Transport for WebProxy {
                             return Ok(Box::new(WebProxy {
                                 closed: false,
                                 key,
-                                connect_buf: Some(vec![0; get_maxbuf()]),
+                                connect_buf,
                                 connect_parsed: false,
                                 socket: Some(RawStream::Tcp(stream)),
                                 buf_off: 0,
+                                pool: self.pool.clone(),
                             }));
                         }
                         _ => {
@@ -113,7 +127,15 @@ impl common::Transport for WebProxy {
                     buf = self.connect_buf.take().unwrap();
                     offset = self.buf_off;
                 } else {
-                    buf = vec![0; get_maxbuf()];
+                    buf = match common::pool_get(self.pool.clone()) {
+                        Some(b) => b,
+                        None => {
+                            return Err(NxtError {
+                                code: NxtErr::CONNECTION,
+                                detail: "".to_string(),
+                            });
+                        }
+                    };
                     offset = 0;
                 }
                 match stream.read(&mut buf[offset..]) {

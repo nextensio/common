@@ -12,7 +12,7 @@ pub struct Fd {
     fd: i32,
     //os platform: linux including android/desktops = 0, apple = 1
     platform: usize,
-    mtu: usize,
+    _mtu: usize,
     closed: bool,
     pool: Arc<Pool<Vec<u8>>>,
 }
@@ -24,7 +24,7 @@ impl Fd {
         Fd {
             fd,
             platform,
-            mtu,
+            _mtu: mtu,
             closed: false,
             pool,
         }
@@ -56,7 +56,15 @@ impl common::Transport for Fd {
     }
 
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
-        let mut buf: Vec<u8> = Vec::with_capacity(self.mtu);
+        let mut buf = match common::pool_get(self.pool.clone()) {
+            Some(b) => b,
+            None => {
+                return Err(NxtError {
+                    code: NxtErr::CONNECTION,
+                    detail: "".to_string(),
+                });
+            }
+        };
         unsafe {
             let mut headroom = HEADROOM;
             let ptr = buf.as_mut_ptr() as u64 + headroom as u64;

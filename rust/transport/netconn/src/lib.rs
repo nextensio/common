@@ -104,7 +104,15 @@ impl common::Transport for NetConn {
     }
 
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
-        let mut buf = vec![0; common::get_maxbuf()];
+        let mut buf = match common::pool_get(self.tcp_pool.clone()) {
+            Some(b) => b,
+            None => {
+                return Err(NxtError {
+                    code: CONNECTION,
+                    detail: "".to_string(),
+                });
+            }
+        };
         match self.stream.as_mut().unwrap() {
             RawStream::Tcp(s) => match s.read(&mut buf[0..]) {
                 Ok(size) => {

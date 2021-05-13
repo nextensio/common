@@ -63,8 +63,10 @@ version = "0.1.0"
 dependencies = [
  "etherparse",
  "httparse",
+ "log",
  "mio",
  "native-tls",
+ "object-pool",
  "prost",
  "prost-build",
 ]
@@ -281,6 +283,7 @@ name = "l3proxy"
 version = "0.1.0"
 dependencies = [
  "common",
+ "managed 0.7.2",
  "object-pool",
  "smoltcp",
 ]
@@ -320,6 +323,14 @@ name = "managed"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c75de51135344a4f8ed3cfe2720dc27736f7711989703a0b43aadf3753c55577"
+
+[[package]]
+name = "managed"
+version = "0.8.0"
+source = "git+https://github.com/gopakumarce/rust-managed.git?branch=gopa-managed#a7c020c583f78d976416f5e96bcc3a10f1c8302c"
+dependencies = [
+ "object-pool",
+]
 
 [[package]]
 name = "matches"
@@ -395,8 +406,7 @@ dependencies = [
 [[package]]
 name = "object-pool"
 version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee9a3e7196d09ec86002b939f1576e8e446d58def8fd48fe578e2c72d5328d68"
+source = "git+https://github.com/gopakumarce/object-pool.git?branch=gopa-objpool#819f41fddd48b6e77928de469245431e6569c224"
 dependencies = [
  "parking_lot",
 ]
@@ -691,11 +701,12 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 [[package]]
 name = "smoltcp"
 version = "0.6.0"
-source = "git+https://github.com/gopakumarce/smoltcp.git?branch=gopa-smoltcp#1ef2974599501f4e9a7d4aac216e4f0cac088565"
+source = "git+https://github.com/gopakumarce/smoltcp.git?branch=gopa-smoltcp#03c54e26f87713565f81170f36e6a261bac6caa6"
 dependencies = [
  "bitflags",
  "byteorder",
- "managed",
+ "managed 0.8.0",
+ "object-pool",
 ]
 
 [[package]]
@@ -868,6 +879,7 @@ version = "0.1.0"
 dependencies = [
  "common",
  "mio",
+ "object-pool",
 ]
 
 [[package]]

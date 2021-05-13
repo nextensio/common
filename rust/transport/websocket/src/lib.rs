@@ -283,7 +283,7 @@ impl common::Transport for WebSession {
                             hdr.streamid,
                             NxtBufs {
                                 hdr: Some(hdr),
-                                bufs: vec![data],
+                                bufs: /* FIXMEEE!!! vec![data] */ vec![],
                                 headroom: hbytes + hdrlen,
                             },
                         ));

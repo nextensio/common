@@ -1,6 +1,5 @@
 use common::{
-    get_maxbuf, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, TCP,
-    UDP,
+    FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, TCP, UDP,
 };
 use object_pool::Pool;
 use smoltcp::iface::InterfaceBuilder;
@@ -26,7 +25,7 @@ pub struct Socket<'a> {
     closed: bool,
     established: bool,
     ip_addrs: [IpCidr; 1],
-    rx_mtu: usize,
+    _rx_mtu: usize,
     tx_mtu: usize,
     handle: SocketHandle,
     proto: usize,
@@ -44,23 +43,36 @@ impl<'a> Socket<'a> {
         tx_mtu: usize,
         pkt_pool: Arc<Pool<Vec<u8>>>,
         tcp_pool: Arc<Pool<Vec<u8>>>,
-    ) -> Self {
+    ) -> Option<Self> {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
-        let mut has_rxbuf = true;
-        let mut has_txbuf = true;
         if tuple.proto == TCP {
-            let rx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-            let tx = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+            let rx_buf = match common::pool_get(tcp_pool.clone()) {
+                Some(b) => b,
+                None => return None,
+            };
+            let tx_buf = match common::pool_get(tcp_pool.clone()) {
+                Some(b) => b,
+                None => return None,
+            };
+            let rx = TcpSocketBuffer::new(rx_buf);
+            let tx = TcpSocketBuffer::new(tx_buf);
             let mut socket = TcpSocket::new(rx, tx, rx_mtu);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
-            // We will allocate buffers when needed for udp, ie when packet arrives
-            has_rxbuf = false;
-            has_txbuf = false;
-            let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![]);
-            let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![]);
+            // NOTE: The pkt_pool buffers have to be at least 2xmtu for smoltcp udp packetbuffer
+            // to work properly
+            let rx_buf = match common::pool_get(pkt_pool.clone()) {
+                Some(b) => b,
+                None => return None,
+            };
+            let tx_buf = match common::pool_get(pkt_pool.clone()) {
+                Some(b) => b,
+                None => return None,
+            };
+            let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], rx_buf);
+            let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], tx_buf);
             let mut socket = UdpSocket::new(rx, tx);
             socket.bind(tuple.dport).unwrap();
             handle = onesock.add(socket);
@@ -68,21 +80,21 @@ impl<'a> Socket<'a> {
         let dest: Ipv4Addr = tuple.dip.parse().unwrap();
         let octets = dest.octets();
         let dest = IpAddress::v4(octets[0], octets[1], octets[2], octets[3]);
-        Socket {
+        Some(Socket {
             onesock,
             closed: false,
             established: false,
             ip_addrs: [IpCidr::new(dest, 32)],
-            rx_mtu,
+            _rx_mtu: rx_mtu,
             tx_mtu,
             handle,
             proto: tuple.proto,
             endpoint: None,
-            has_rxbuf,
-            has_txbuf,
+            has_rxbuf: true,
+            has_txbuf: true,
             pkt_pool,
             tcp_pool,
-        }
+        })
     }
 }
 
@@ -149,7 +161,7 @@ impl<'a> common::Transport for Socket<'a> {
                             0,
                             NxtBufs {
                                 hdr: None,
-                                bufs: vec![data.to_vec()],
+                                bufs: vec![data],
                                 headroom: 0,
                             },
                         ));
@@ -237,13 +249,24 @@ impl<'a> common::Transport for Socket<'a> {
         }
         if self.proto == UDP {
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-            // For udp, we get a new buffer for each new packet, we cant keep appending
+            // For udp, its effectively a new buffer for each new packet, we cant keep appending
             // to the old buffer like we do in tcp because udp is not a "stream" transport.
             // If the old buffer had data, it just gets freed when we set the new one, so
             // we lose the data, too bad - but it wont happen because the caller usually transmits
             // as soon as it has data
-            let tbuf =
-                UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * self.rx_mtu]);
+            let tbuf = match common::pool_get(self.pkt_pool.clone()) {
+                Some(b) => b,
+                None => {
+                    return Err((
+                        Some(data),
+                        NxtError {
+                            code: CONNECTION,
+                            detail: "".to_string(),
+                        },
+                    ));
+                }
+            };
+            let tbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], tbuf);
             sock.set_tx_buffer(tbuf);
             self.has_txbuf = true;
             if let Some(endpoint) = self.endpoint.as_ref() {
@@ -313,7 +336,19 @@ impl<'a> common::Transport for Socket<'a> {
             }
             self.established = true;
             if !self.has_txbuf {
-                let tbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
+                let tbuf = match common::pool_get(self.tcp_pool.clone()) {
+                    Some(b) => b,
+                    None => {
+                        return Err((
+                            Some(data),
+                            NxtError {
+                                code: CONNECTION,
+                                detail: "".to_string(),
+                            },
+                        ));
+                    }
+                };
+                let tbuf = TcpSocketBuffer::new(tbuf);
                 sock.set_tx_buffer(tbuf);
                 self.has_txbuf = true;
             }
@@ -363,17 +398,32 @@ impl<'a> common::Transport for Socket<'a> {
         if tcp {
             if rx.len() != 0 && !self.has_rxbuf {
                 let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-                let rbuf = TcpSocketBuffer::new(vec![0; get_maxbuf()]);
-                sock.set_rx_buffer(rbuf);
-                self.has_rxbuf = true;
+                match common::pool_get(self.tcp_pool.clone()) {
+                    Some(b) => {
+                        let rbuf = TcpSocketBuffer::new(b);
+                        sock.set_rx_buffer(rbuf);
+                        self.has_rxbuf = true;
+                    }
+                    None => {
+                        // Well no point giving the socket packets if we can allocate buffer, drop all pkts
+                        rx.clear();
+                    }
+                };
             }
         } else {
             if rx.len() != 0 && !self.has_rxbuf {
                 let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-                let rbuf =
-                    UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], vec![0; 2 * self.rx_mtu]);
-                sock.set_rx_buffer(rbuf);
-                self.has_rxbuf = true;
+                match common::pool_get(self.pkt_pool.clone()) {
+                    Some(b) => {
+                        let rbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], b);
+                        sock.set_rx_buffer(rbuf);
+                        self.has_rxbuf = true;
+                    }
+                    None => {
+                        // Well no point giving the socket packets if we can allocate buffer, drop all pkts
+                        rx.clear();
+                    }
+                };
             }
         }
 

@@ -18,6 +18,6 @@ native-tls = "0.2"
 tungstenite = "0.13.0"
 prost = "0.7"
 http = "0.2"
-object-pool = "0.5"
+object-pool = { git = "https://github.com/gopakumarce/object-pool.git", branch = "gopa-objpool" }
 mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
 common = { path = "../../common" }

@@ -1,8 +1,10 @@
 use etherparse::InternetSlice::*;
 use etherparse::SlicedPacket;
 use etherparse::TransportSlice::*;
+use log::error;
 use mio::{Poll, Token};
-use std::sync::atomic::AtomicUsize;
+use object_pool::{try_pull, Pool, Reusable};
+use std::sync::{atomic::AtomicUsize, Arc};
 use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 
 pub mod nxthdr {
@@ -136,7 +138,7 @@ pub enum RegType {
 // chain, ie first_buffer[0..headroom] is empty and data starts at first_buffer[headroom]
 pub struct NxtBufs {
     pub hdr: Option<NxtHdr>,
-    pub bufs: Vec<Vec<u8>>,
+    pub bufs: Vec<Reusable<Vec<u8>>>,
     pub headroom: usize,
 }
 
@@ -402,6 +404,19 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
         Err(_) => return ("".to_string(), 0, "".to_string()),
     }
     return ("".to_string(), 0, "".to_string());
+}
+
+pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
+    match try_pull(pool) {
+        Some(mut b) => {
+            b.clear();
+            return Some(b);
+        }
+        None => {
+            error!("Pool get failed");
+            return None;
+        }
+    }
 }
 
 #[cfg(test)]
