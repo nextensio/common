@@ -2,6 +2,7 @@ use common::{
     get_maxbuf, FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, TCP,
     UDP,
 };
+use object_pool::Pool;
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
 use smoltcp::socket::TcpSocketBuffer;
@@ -12,8 +13,8 @@ use smoltcp::Error;
 use smoltcp::{
     phy::packetq::PacketQ, phy::Medium, socket::SocketHandle, socket::SocketRef, socket::SocketSet,
 };
-use std::collections::VecDeque;
 use std::net::Ipv4Addr;
+use std::{collections::VecDeque, sync::Arc};
 
 // NOTE: See pub enum ManagedSlice in slice.rs in the smoltcp code,
 // the lifetime here is for the 'Borrowed' variant of that enum in
@@ -32,10 +33,18 @@ pub struct Socket<'a> {
     endpoint: Option<IpEndpoint>,
     has_rxbuf: bool,
     has_txbuf: bool,
+    pkt_pool: Arc<Pool<Vec<u8>>>,
+    tcp_pool: Arc<Pool<Vec<u8>>>,
 }
 
 impl<'a> Socket<'a> {
-    pub fn new_client(tuple: &FlowV4Key, rx_mtu: usize, tx_mtu: usize) -> Self {
+    pub fn new_client(
+        tuple: &FlowV4Key,
+        rx_mtu: usize,
+        tx_mtu: usize,
+        pkt_pool: Arc<Pool<Vec<u8>>>,
+        tcp_pool: Arc<Pool<Vec<u8>>>,
+    ) -> Self {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         let mut has_rxbuf = true;
@@ -71,6 +80,8 @@ impl<'a> Socket<'a> {
             endpoint: None,
             has_rxbuf,
             has_txbuf,
+            pkt_pool,
+            tcp_pool,
         }
     }
 }

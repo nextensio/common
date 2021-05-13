@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use common::{get_maxbuf, NxtBufs, NxtErr, NxtError, RegType, HEADROOM};
 use libc::c_void;
 use mio::unix::SourceFd;
 use mio::{Interest, Poll, Token};
+use object_pool::Pool;
 
 const AF_INET: u8 = 2;
 
@@ -11,17 +14,19 @@ pub struct Fd {
     platform: usize,
     mtu: usize,
     closed: bool,
+    pool: Arc<Pool<Vec<u8>>>,
 }
 
 // This is assumed to be a non-blocking fd
 
 impl Fd {
-    pub fn new_client(fd: i32, platform: usize, mtu: usize) -> Self {
+    pub fn new_client(fd: i32, platform: usize, mtu: usize, pool: Arc<Pool<Vec<u8>>>) -> Self {
         Fd {
             fd,
             platform,
             mtu,
             closed: false,
+            pool,
         }
     }
 }

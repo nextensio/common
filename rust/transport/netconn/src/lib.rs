@@ -1,6 +1,8 @@
 use common::{NxtBufs, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType};
 use mio::{Interest, Poll, Token};
+use object_pool::Pool;
 use std::net::UdpSocket;
+use std::sync::Arc;
 use std::{io::Read, io::Write};
 use std::{net::SocketAddr, net::TcpStream, net::ToSocketAddrs, time::Duration};
 
@@ -12,6 +14,7 @@ pub struct NetConn {
     stream: Option<RawStream>,
     nonblocking: bool,
     connect_timeout: Option<Duration>,
+    tcp_pool: Arc<Pool<Vec<u8>>>,
 }
 
 impl NetConn {
@@ -21,6 +24,7 @@ impl NetConn {
         proto: usize,
         nonblocking: bool,
         connect_timeout: Option<Duration>,
+        tcp_pool: Arc<Pool<Vec<u8>>>,
     ) -> NetConn {
         NetConn {
             server,
@@ -30,6 +34,7 @@ impl NetConn {
             stream: None,
             nonblocking,
             connect_timeout,
+            tcp_pool,
         }
     }
 }

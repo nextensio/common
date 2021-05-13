@@ -5,10 +5,11 @@ use common::{
 use http::Request;
 use mio::{Interest, Poll, Token};
 use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
+use object_pool::Pool;
 use prost::Message;
-use std::io::Cursor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, u64};
+use std::{io::Cursor, sync::Arc};
 use tungstenite::{protocol::WebSocketConfig, WebSocket};
 
 // The format of the data that gets packed in a websocket is as below
@@ -31,6 +32,7 @@ pub struct WebSession {
     pub tcp_stream: Option<RawStream>,
     close_pending: Vec<u64>,
     nonblocking: bool,
+    tcp_pool: Arc<Pool<Vec<u8>>>,
 }
 
 struct WebStream {}
@@ -42,6 +44,7 @@ impl WebSession {
         port: usize,
         request_headers: HashMap<String, String>,
         nonblocking: bool,
+        tcp_pool: Arc<Pool<Vec<u8>>>,
     ) -> WebSession {
         let stream = WebStream {};
         let mut streams = HashMap::new();
@@ -59,6 +62,7 @@ impl WebSession {
             tcp_stream: None,
             close_pending: Vec::new(),
             nonblocking,
+            tcp_pool,
         }
     }
 }
