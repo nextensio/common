@@ -2,6 +2,7 @@ use common::{
     FlowV4Key, NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, TCP, UDP,
 };
 use object_pool::Pool;
+use object_pool::Reusable;
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
 use smoltcp::socket::TcpSocketBuffer;
@@ -389,7 +390,11 @@ impl<'a> common::Transport for Socket<'a> {
 
     // The iphone is EXTREMELY stingy with memory, the entire datapath including code and data
     // has to fit in 15Mb. So we have no option but to be very rough with reclaiming unused memory
-    fn poll(&mut self, rx: &mut VecDeque<(usize, Vec<u8>)>, tx: &mut VecDeque<(usize, Vec<u8>)>) {
+    fn poll(
+        &mut self,
+        rx: &mut VecDeque<(usize, Reusable<Vec<u8>>)>,
+        tx: &mut VecDeque<(usize, Reusable<Vec<u8>>)>,
+    ) {
         let tcp = self.proto == common::TCP;
         // There is some packet going into tcp/udp, it might have data or it might be just tcp ACK
         // with no data, we dont know that here (well we can if we parse), we give the flow
@@ -427,7 +432,14 @@ impl<'a> common::Transport for Socket<'a> {
             }
         }
 
-        let pktq = PacketQ::new(Medium::Ip, self.tx_mtu, rx, tx, 0);
+        let pktq = PacketQ::new(
+            Medium::Ip,
+            self.tx_mtu,
+            rx,
+            tx,
+            4, /*for apple*/
+            self.pkt_pool.clone(),
+        );
         // The below is some cycles that can be saved if smolltcp were to expose the
         // interface.device to us. So we dont have to keep building this each time, we
         // can keep it built and just swap out the queues here
