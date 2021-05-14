@@ -37,19 +37,6 @@ pub struct Socket<'a> {
     tcp_pool: Arc<Pool<Vec<u8>>>,
 }
 
-fn get_buf_with_len(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
-    match common::pool_get(pool) {
-        Some(mut b) => {
-            let capacity = b.capacity();
-            unsafe {
-                b.set_len(capacity);
-            }
-            return Some(b);
-        }
-        None => return None,
-    };
-}
-
 impl<'a> Socket<'a> {
     pub fn new_client(
         tuple: &FlowV4Key,
@@ -61,8 +48,8 @@ impl<'a> Socket<'a> {
         let mut onesock = SocketSet::new(Vec::with_capacity(1));
         let handle;
         if tuple.proto == TCP {
-            let rx_buf = get_buf_with_len(tcp_pool.clone())?;
-            let tx_buf = get_buf_with_len(tcp_pool.clone())?;
+            let rx_buf = common::pool_get(tcp_pool.clone())?;
+            let tx_buf = common::pool_get(tcp_pool.clone())?;
             let rx = TcpSocketBuffer::new(rx_buf);
             let tx = TcpSocketBuffer::new(tx_buf);
             let mut socket = TcpSocket::new(rx, tx);
@@ -71,8 +58,8 @@ impl<'a> Socket<'a> {
         } else {
             // NOTE: The pkt_pool buffers have to be at least 2xmtu for smoltcp udp packetbuffer
             // to work properly
-            let rx_buf = get_buf_with_len(pkt_pool.clone())?;
-            let tx_buf = get_buf_with_len(pkt_pool.clone())?;
+            let rx_buf = common::pool_get(pkt_pool.clone())?;
+            let tx_buf = common::pool_get(pkt_pool.clone())?;
             let rx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], rx_buf);
             let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], tx_buf);
             let mut socket = UdpSocket::new(rx, tx);
@@ -256,7 +243,7 @@ impl<'a> common::Transport for Socket<'a> {
             // If the old buffer had data, it just gets freed when we set the new one, so
             // we lose the data, too bad - but it wont happen because the caller usually transmits
             // as soon as it has data
-            let tbuf = match get_buf_with_len(self.pkt_pool.clone()) {
+            let tbuf = match common::pool_get(self.pkt_pool.clone()) {
                 Some(b) => b,
                 None => {
                     return Err((
@@ -338,7 +325,7 @@ impl<'a> common::Transport for Socket<'a> {
             }
             self.established = true;
             if !self.has_txbuf {
-                let tbuf = match get_buf_with_len(self.tcp_pool.clone()) {
+                let tbuf = match common::pool_get(self.tcp_pool.clone()) {
                     Some(b) => b,
                     None => {
                         return Err((
@@ -404,7 +391,7 @@ impl<'a> common::Transport for Socket<'a> {
         if tcp {
             if rx.len() != 0 && !self.has_rxbuf {
                 let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-                match get_buf_with_len(self.tcp_pool.clone()) {
+                match common::pool_get(self.tcp_pool.clone()) {
                     Some(b) => {
                         let rbuf = TcpSocketBuffer::new(b);
                         sock.set_rx_buffer(rbuf);
@@ -419,7 +406,7 @@ impl<'a> common::Transport for Socket<'a> {
         } else {
             if rx.len() != 0 && !self.has_rxbuf {
                 let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-                match get_buf_with_len(self.pkt_pool.clone()) {
+                match common::pool_get(self.pkt_pool.clone()) {
                     Some(b) => {
                         let rbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], b);
                         sock.set_rx_buffer(rbuf);

@@ -415,6 +415,10 @@ pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
     match try_pull(pool) {
         Some(mut b) => {
             b.clear();
+            let capacity = b.capacity();
+            unsafe {
+                b.set_len(capacity);
+            }
             return Some(b);
         }
         None => {
