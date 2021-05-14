@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common::{get_maxbuf, NxtBufs, NxtErr, NxtError, RegType, HEADROOM};
 use libc::c_void;
+use log::error;
 use mio::unix::SourceFd;
 use mio::{Interest, Poll, Token};
 use object_pool::Pool;
@@ -121,6 +122,7 @@ impl common::Transport for Fd {
             // to each packet. IFF_NO_PI option can prevent this (TODO) ??
             if self.platform == 1 {
                 if data.headroom >= 4 {
+                    error!("has headroom {}", data.headroom);
                     let d = data.bufs.first_mut().unwrap();
                     let h = data.headroom - 4;
                     d[h..h + 4].copy_from_slice(&dcloned[0..]);
