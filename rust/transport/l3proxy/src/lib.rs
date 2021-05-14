@@ -54,6 +54,8 @@ impl<'a> Socket<'a> {
             let tx = TcpSocketBuffer::new(tx_buf);
             let mut socket = TcpSocket::new(rx, tx);
             socket.listen(tuple.dport).unwrap();
+            socket.recv_buffer_owned(true);
+            socket.send_buffer_owned(true);
             handle = onesock.add(socket);
         } else {
             // NOTE: The pkt_pool buffers have to be at least 2xmtu for smoltcp udp packetbuffer
@@ -64,6 +66,8 @@ impl<'a> Socket<'a> {
             let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], tx_buf);
             let mut socket = UdpSocket::new(rx, tx);
             socket.bind(tuple.dport).unwrap();
+            socket.recv_buffer_owned();
+            socket.send_buffer_owned();
             handle = onesock.add(socket);
         }
         let dest: Ipv4Addr = tuple.dip.parse().unwrap();
@@ -79,8 +83,8 @@ impl<'a> Socket<'a> {
             handle,
             proto: tuple.proto,
             endpoint: None,
-            has_rxbuf: true,
-            has_txbuf: true,
+            has_rxbuf: false,
+            has_txbuf: false,
             pkt_pool,
             tcp_pool,
         })
