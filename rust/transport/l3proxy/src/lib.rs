@@ -58,7 +58,7 @@ impl<'a> Socket<'a> {
             };
             let rx = TcpSocketBuffer::new(rx_buf);
             let tx = TcpSocketBuffer::new(tx_buf);
-            let mut socket = TcpSocket::new(rx, tx, rx_mtu);
+            let mut socket = TcpSocket::new(rx, tx);
             socket.listen(tuple.dport).unwrap();
             handle = onesock.add(socket);
         } else {
@@ -434,6 +434,7 @@ impl<'a> common::Transport for Socket<'a> {
 
         let pktq = PacketQ::new(
             Medium::Ip,
+            self._rx_mtu,
             self.tx_mtu,
             rx,
             tx,
