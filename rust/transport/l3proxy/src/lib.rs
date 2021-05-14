@@ -3,6 +3,7 @@ use common::{
 };
 use object_pool::Pool;
 use object_pool::Reusable;
+use packetq::PacketQ;
 use smoltcp::iface::InterfaceBuilder;
 use smoltcp::socket::TcpSocket;
 use smoltcp::socket::TcpSocketBuffer;
@@ -10,9 +11,8 @@ use smoltcp::socket::UdpSocket;
 use smoltcp::socket::{UdpPacketMetadata, UdpSocketBuffer};
 use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint};
 use smoltcp::Error;
-use smoltcp::{
-    phy::packetq::PacketQ, phy::Medium, socket::SocketHandle, socket::SocketRef, socket::SocketSet,
-};
+use smoltcp::{phy::Medium, socket::SocketHandle, socket::SocketRef, socket::SocketSet};
+
 use std::net::Ipv4Addr;
 use std::{collections::VecDeque, sync::Arc};
 
@@ -54,8 +54,8 @@ impl<'a> Socket<'a> {
             let tx = TcpSocketBuffer::new(tx_buf);
             let mut socket = TcpSocket::new(rx, tx);
             socket.listen(tuple.dport).unwrap();
-            socket.recv_buffer_owned(true);
-            socket.send_buffer_owned(true);
+            socket.recv_take_reusable(true);
+            socket.send_take_reusable(true);
             handle = onesock.add(socket);
         } else {
             // NOTE: The pkt_pool buffers have to be at least 2xmtu for smoltcp udp packetbuffer
@@ -66,8 +66,8 @@ impl<'a> Socket<'a> {
             let tx = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], tx_buf);
             let mut socket = UdpSocket::new(rx, tx);
             socket.bind(tuple.dport).unwrap();
-            socket.recv_buffer_owned();
-            socket.send_buffer_owned();
+            socket.recv_take_reusable();
+            socket.send_take_reusable();
             handle = onesock.add(socket);
         }
         let dest: Ipv4Addr = tuple.dip.parse().unwrap();
@@ -139,7 +139,7 @@ impl<'a> common::Transport for Socket<'a> {
         }
         if self.proto == common::UDP {
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-            let ret = sock.recv_buffer_owned();
+            let ret = sock.recv_take_reusable();
             match ret {
                 Some((mut data, len, endpoint)) => {
                     self.has_rxbuf = false;
@@ -197,7 +197,7 @@ impl<'a> common::Transport for Socket<'a> {
                     detail: "".to_string(),
                 });
             }
-            let ret = sock.recv_buffer_owned(false);
+            let ret = sock.recv_take_reusable(false);
             match ret {
                 Some((mut data, len)) => {
                     self.has_rxbuf = false;
@@ -260,7 +260,7 @@ impl<'a> common::Transport for Socket<'a> {
                 }
             };
             let tbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], tbuf);
-            sock.set_tx_buffer(tbuf);
+            sock.set_tx_reusable(tbuf);
             self.has_txbuf = true;
             if let Some(endpoint) = self.endpoint.as_ref() {
                 while !data.bufs.is_empty() {
@@ -342,7 +342,7 @@ impl<'a> common::Transport for Socket<'a> {
                     }
                 };
                 let tbuf = TcpSocketBuffer::new(tbuf);
-                sock.set_tx_buffer(tbuf);
+                sock.set_tx_reusable(tbuf);
                 self.has_txbuf = true;
             }
             while !data.bufs.is_empty() {
@@ -398,7 +398,7 @@ impl<'a> common::Transport for Socket<'a> {
                 match common::pool_get(self.tcp_pool.clone()) {
                     Some(b) => {
                         let rbuf = TcpSocketBuffer::new(b);
-                        sock.set_rx_buffer(rbuf);
+                        sock.set_rx_reusable(rbuf);
                         self.has_rxbuf = true;
                     }
                     None => {
@@ -413,7 +413,7 @@ impl<'a> common::Transport for Socket<'a> {
                 match common::pool_get(self.pkt_pool.clone()) {
                     Some(b) => {
                         let rbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], b);
-                        sock.set_rx_buffer(rbuf);
+                        sock.set_rx_reusable(rbuf);
                         self.has_rxbuf = true;
                     }
                     None => {
@@ -451,14 +451,14 @@ impl<'a> common::Transport for Socket<'a> {
             // been transmitted, reclaim the buffers
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
             if self.has_txbuf {
-                if sock.send_buffer_owned(false).is_some() {
+                if sock.send_take_reusable(false).is_some() {
                     self.has_txbuf = false;
                 }
             }
             if !sock.recv_has_data() {
                 // Maybe we just gave an ACK with no data, to the socket. The receive buffers
                 // are empty, reclaim them
-                if sock.recv_buffer_owned(false).is_some() {
+                if sock.recv_take_reusable(false).is_some() {
                     self.has_rxbuf = false;
                 }
             }
@@ -467,10 +467,10 @@ impl<'a> common::Transport for Socket<'a> {
             // is done, the udp data will be packet-ized in the tx packet queue and we can
             // dispose off the data buffer
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-            sock.send_buffer_owned();
+            sock.send_take_reusable();
             self.has_txbuf = false;
             if !sock.recv_has_data() {
-                sock.recv_buffer_owned();
+                sock.recv_take_reusable();
                 self.has_rxbuf = false;
             }
         }
@@ -480,8 +480,8 @@ impl<'a> common::Transport for Socket<'a> {
         if self.proto == common::TCP {
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
             if force {
-                sock.send_buffer_owned(true);
-                sock.recv_buffer_owned(true);
+                sock.send_take_reusable(true);
+                sock.recv_take_reusable(true);
                 self.has_rxbuf = false;
                 self.has_txbuf = false;
                 return true;
@@ -490,8 +490,8 @@ impl<'a> common::Transport for Socket<'a> {
         } else {
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
             if force {
-                sock.send_buffer_owned();
-                sock.recv_buffer_owned();
+                sock.send_take_reusable();
+                sock.recv_take_reusable();
                 self.has_rxbuf = false;
                 self.has_txbuf = false;
                 return true;
@@ -507,3 +507,5 @@ impl<'a> common::Transport for Socket<'a> {
         }
     }
 }
+
+mod packetq;
