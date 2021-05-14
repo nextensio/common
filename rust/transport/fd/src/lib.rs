@@ -60,7 +60,7 @@ impl common::Transport for Fd {
             Some(b) => b,
             None => {
                 return Err(NxtError {
-                    code: NxtErr::CONNECTION,
+                    code: NxtErr::EWOULDBLOCK,
                     detail: "".to_string(),
                 });
             }
