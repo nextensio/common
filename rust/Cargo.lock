@@ -701,7 +701,7 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 [[package]]
 name = "smoltcp"
 version = "0.6.0"
-source = "git+https://github.com/gopakumarce/smoltcp.git?branch=gopa-smoltcp#84153c57cb3d3acd116ae13d6b73fcdb7f700037"
+source = "git+https://github.com/gopakumarce/smoltcp.git?branch=gopa-smoltcp#74ad8fe19e2d9d5f13cbacbd40b3075dcd879c9b"
 dependencies = [
  "bitflags",
  "byteorder",
