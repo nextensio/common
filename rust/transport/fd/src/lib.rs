@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common::{get_maxbuf, NxtBufs, NxtErr, NxtError, RegType, HEADROOM};
 use libc::c_void;
-use log::error;
 use mio::unix::SourceFd;
 use mio::{Interest, Poll, Token};
 use object_pool::Pool;

@@ -4,6 +4,7 @@ use common::{
 };
 use mio::{Interest, Poll, Token};
 use object_pool::{Pool, Reusable};
+use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::{io::Read, io::Write};
 
@@ -41,8 +42,25 @@ impl common::Transport for WebProxy {
     fn listen(&mut self) -> Result<Box<dyn Transport>, NxtError> {
         if self.socket.is_none() {
             let addr: std::net::SocketAddr = format!("0.0.0.0:{}", self.key.sport).parse().unwrap();
-            let listener = mio::net::TcpListener::bind(addr)?;
-            self.socket = Some(RawStream::TcpLis(listener));
+            let listener = std::net::TcpListener::bind(addr)?;
+            unsafe {
+                let optval: libc::c_int = 1;
+                let ret = libc::setsockopt(
+                    listener.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_REUSEADDR,
+                    &optval as *const _ as *const libc::c_void,
+                    std::mem::size_of_val(&optval) as libc::socklen_t,
+                );
+                if ret != 0 {
+                    let e = std::io::Error::last_os_error();
+                    return Err(NxtError {
+                        code: NxtErr::CONNECTION,
+                        detail: e.to_string(),
+                    });
+                }
+            }
+            self.socket = Some(RawStream::TcpLis(mio::net::TcpListener::from_std(listener)));
         }
         match self.socket.as_mut().unwrap() {
             RawStream::TcpLis(listener) => match listener.accept() {

@@ -879,6 +879,7 @@ name = "webproxy"
 version = "0.1.0"
 dependencies = [
  "common",
+ "libc",
  "mio",
  "object-pool",
 ]
