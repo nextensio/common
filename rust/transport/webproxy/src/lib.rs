@@ -60,6 +60,7 @@ impl common::Transport for WebProxy {
                     });
                 }
             }
+            listener.set_nonblocking(true)?;
             self.socket = Some(RawStream::TcpLis(mio::net::TcpListener::from_std(listener)));
         }
         match self.socket.as_mut().unwrap() {
