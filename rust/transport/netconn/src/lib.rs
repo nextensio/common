@@ -14,6 +14,7 @@ pub struct NetConn {
     stream: Option<RawStream>,
     nonblocking: bool,
     connect_timeout: Option<Duration>,
+    pkt_pool: Arc<Pool<Vec<u8>>>,
     tcp_pool: Arc<Pool<Vec<u8>>>,
 }
 
@@ -24,6 +25,7 @@ impl NetConn {
         proto: usize,
         nonblocking: bool,
         connect_timeout: Option<Duration>,
+        pkt_pool: Arc<Pool<Vec<u8>>>,
         tcp_pool: Arc<Pool<Vec<u8>>>,
     ) -> NetConn {
         NetConn {
@@ -34,6 +36,7 @@ impl NetConn {
             stream: None,
             nonblocking,
             connect_timeout,
+            pkt_pool,
             tcp_pool,
         }
     }
@@ -104,15 +107,28 @@ impl common::Transport for NetConn {
     }
 
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
-        let mut buf = match common::pool_get(self.tcp_pool.clone()) {
-            Some(b) => b,
-            None => {
-                return Err(NxtError {
-                    code: CONNECTION,
-                    detail: "".to_string(),
-                });
-            }
-        };
+        let mut buf;
+        if self.proto == common::TCP {
+            buf = match common::pool_get(self.tcp_pool.clone()) {
+                Some(b) => b,
+                None => {
+                    return Err(NxtError {
+                        code: CONNECTION,
+                        detail: "".to_string(),
+                    });
+                }
+            };
+        } else {
+            buf = match common::pool_get(self.pkt_pool.clone()) {
+                Some(b) => b,
+                None => {
+                    return Err(NxtError {
+                        code: CONNECTION,
+                        detail: "".to_string(),
+                    });
+                }
+            };
+        }
         match self.stream.as_mut().unwrap() {
             RawStream::Tcp(s) => match s.read(&mut buf[0..]) {
                 Ok(size) => {

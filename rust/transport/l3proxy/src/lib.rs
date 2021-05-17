@@ -430,7 +430,7 @@ impl<'a> common::Transport for Socket<'a> {
             self.tx_mtu,
             rx,
             tx,
-            4, /*for apple*/
+            4, /* for apple platform specific headers, see fd/src/lib.rs */
             self.pkt_pool.clone(),
         );
         // The below is some cycles that can be saved if smolltcp were to expose the
