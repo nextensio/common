@@ -13,7 +13,9 @@ message NxtOnboard {
     string userid = 2;
     string uuid = 3;
     string accessToken = 4;
-    repeated string services = 5; 
+    repeated string services = 5;
+    string cluster = 6;
+    string podname = 7;
 }
 
 // source, dest, sport, dport, proto: standard five tuple associated with any flow. 
