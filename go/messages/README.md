@@ -1,8 +1,8 @@
 # Generating code
 
 The protobufs are shared between agent/connectors and the minions. Here is how to generate
-the protobuf code. Also agents might be in different languages, so we need instructions on
-how to generate it for each language
+the protobuf code for the Go agent (it has to be generated manually).
+The protobuf code for the Rust agent is auto-generated when the Rust agent is built. 
 
 ## Generating go code
 
@@ -13,14 +13,11 @@ how to generate it for each language
   
    The above will put protoc-gen-go in your $GOPATH:/bin, so $GOPATH:/bin has to be in your PATH
 
-3. To generate go code, run the below
+3. To generate go code, run the below command in the common/proto directory:
    protoc --go_out=. ./nxt_hdr.proto -I ./
 
-   It will generate the code in subdirectory gitlab.com/nextensio/message/nxthdr/ .. copy that go file
-   from that directory to nxthdr/ and just remove the gitlab.com/... subdirectory
-
-## Generating javascript code
-
-Run this "protoc --js_out=import_style=commonjs,binary:. ./nxt_hdr.proto -I ./"
-
-This will produce the javascript file, copy the javasript file to your javascript agent source code
+   It will generate the protobuf go code in
+       common/proto/gitlab.com/nextensio/common/messages/nxthdr/nxt_hdr.pb.go
+   Copy that go file to
+       common/go/messages/nxthdr/nxt_hdr.pb.go
+   After that, the common/proto/gitlab.com/ subdirectory can be removed.
