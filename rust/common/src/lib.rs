@@ -20,6 +20,7 @@ static MAXBUF: AtomicUsize = AtomicUsize::new(2048 * 3);
 pub const HEADROOM: usize = 0;
 pub const TCP: usize = 6;
 pub const UDP: usize = 17;
+pub const MAXVARINT_BUF: usize = 4;
 
 pub fn get_maxbuf() -> usize {
     return MAXBUF.load(std::sync::atomic::Ordering::Relaxed);
@@ -71,6 +72,7 @@ pub enum NxtErr {
     GENERAL,
     CONNECTION,
     EWOULDBLOCK,
+    ENOMEM,
 }
 
 pub struct NxtError {

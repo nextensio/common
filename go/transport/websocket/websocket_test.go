@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
@@ -101,6 +102,9 @@ func dialWebsock(ctx context.Context, serverName string, serverIP string, port i
 	}
 	retry := 0
 	lg := log.New(os.Stdout, "test", 0)
+	var httpHdr = make(http.Header)
+	httpHdr.Add("x-nextensio-connect", "cpod-1")
+	httpHdr.Add("x-nextensio-agent", "foobar")
 	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, nil)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()

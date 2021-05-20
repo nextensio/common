@@ -30,11 +30,9 @@ const (
 	TCP_CLOSED
 )
 
-const (
-	// We expect all the nextensio headers to fit in one buffer (the first buffer), so
-	// this size has to be larger than the largest nextensio header we ever expect
-	MAXVARINT_BUF = 9
-)
+// This is the number of bytes needed to encode the nextensio header length. 4 bytes should
+// be plenty, we will never have a header that big !!
+const MAXVARINT_BUF = 4
 
 var MAXBUF = (2048 * 3)
 var LazyNoCopy = gopacket.DecodeOptions{Lazy: true, NoCopy: true}

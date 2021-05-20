@@ -2,21 +2,24 @@ package websock
 
 import (
 	"context"
+	"crypto/sha1"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	b64 "encoding/base64"
+
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/pion/dtls/v2/pkg/crypto/selfsign"
 	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
@@ -28,24 +31,6 @@ const (
 	streamClose  = 1
 	streamWindow = 2
 )
-
-const (
-	pongWait   = 60 * time.Second
-	pingPeriod = (pongWait * 9) / 10
-)
-
-// On the read front, gorilla websocket library is pretty un-optimized - it will first
-// read into its own internal read buffer and then when we ask for data it will copy
-// the data to our buffers - so there is a double copy. It need not have been that way,
-// they should be able to just read into the buffers we provide. We might have to fix
-// that some day. So till then, we provide a humongous buffer into which gorilla can
-// just read in the entire data and then we can read it into our own smaller buffers. Note that
-// even if the buffer sizes here ends up being smaller than our max data size, its just fine,
-// nothing goes wrong, gorilla just reads in multiple batches thats all.
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  common.MAXBUF,
-	WriteBufferSize: common.MAXBUF,
-}
 
 // Streams will not get/send data of the same size always, so assuming we get
 // at least MTU (1500) sized data at any point, and say window size is 16K, this will
@@ -63,7 +48,7 @@ const dataQlen = 100
 type webSession struct {
 	server     bool
 	wlock      sync.Mutex
-	conn       *websocket.Conn
+	conn       net.Conn
 	nextStream uint64
 	slock      sync.Mutex
 	streams    map[uint64]*WebStream
@@ -109,53 +94,124 @@ func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName st
 }
 
 func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
-
-	messageType, r, err := session.conn.NextReader()
-	if err != nil {
-		return 0, nil, 0, common.Err(common.CONNECTION_ERR, err)
+	// We dont want to end up reading a bunch of data in and then figure out that some of
+	// the data is for the next frame. Then we have to buffer that data etc.. and the code
+	// becomes more complicated. So the song and dance below is to first figure out exactly
+	// what is the nextensio header length, then read in that much amount of data and decode
+	// the header and then find the datalength and then read in the data. To read the header
+	// exactly and prevent over-reading (for same reasons as above), we read two bytes at
+	// a time. Most of the times the header length will fit in two bytes. Also the smallest
+	// nextensio header can be just two bytes (a Close frame), so the smallest frame here
+	// can be 1 byte of header length and 2 bytes of headers and 0 bytes of data.
+	var hlenBuf [common.MAXVARINT_BUF]byte
+	for i := 0; i < len(hlenBuf); i++ {
+		hlenBuf[i] = 0
 	}
-	if messageType != websocket.BinaryMessage {
-		return 0, nil, 0, common.Err(common.CONNECTION_ERR, nil)
-	}
-
-	// Read in all the data. Note that the NextReader() does not necessarily
-	// fill up the entire data in one read even though the buffer has space,
-	// it might need multiple reads to fill up a buffer
 	total := 0
-	var bufs [][]byte
-	buf := make([]byte, common.MAXBUF)
-	data := &nxtData{data: net.Buffers{}, hdr: &nxthdr.NxtHdr{}}
 	for {
-		n, err := r.Read(buf[total:])
-		total += n
-		if err == io.EOF || total >= common.MAXBUF {
-			bufs = append(bufs, buf[0:total])
-			total = 0
-			if err != io.EOF {
-				buf = make([]byte, common.MAXBUF)
-			} else {
+		if total == len(hlenBuf) {
+			// Well this is some wierd junk packet with junk length, close this session
+			return 0, nil, 0, common.Err(common.CONNECTION_ERR, nil)
+		}
+		end := total + 2
+		if end > len(hlenBuf) {
+			end = len(hlenBuf)
+		}
+		r, err := session.conn.Read(hlenBuf[total:end])
+		total += r
+		if err != nil && (err != io.EOF || r == 0) {
+			return 0, nil, 0, common.Err(common.CONNECTION_ERR, err)
+		}
+		complete := false
+		// The demarcation of a varint encoding is a byte with MSB bit 0
+		for i := 0; i < total; i++ {
+			if hlenBuf[i]&0x80 == 0 {
+				complete = true
 				break
 			}
 		}
+		if complete {
+			break
+		}
 	}
-	buf = nil
+	hdrLen, hbytes := binary.Uvarint(hlenBuf[0:])
+	if hbytes <= 0 || hbytes > total {
+		return 0, nil, 0, common.Err(common.CONNECTION_ERR, nil)
+	}
 
-	// Decode the protobuf header. The protobuf header should fit in one buffer
-	// And every message on this transport should at least have the nextensio
-	// header even if there is no payload
-	hdrLen, hbytes := binary.Uvarint(bufs[0][0:])
-	if hbytes <= 0 {
-		return 0, nil, 0, common.Err(common.GENERAL_ERR, nil)
+	// Just sanity check for ridiculous values so we dont end up affecting
+	// all sessions
+	if hdrLen > 64*1024 {
+		return 0, nil, 0, common.Err(common.CONNECTION_ERR, nil)
 	}
-	datOff := hbytes + int(hdrLen)
-	if datOff > len(bufs[0]) {
-		return 0, nil, 0, common.Err(common.GENERAL_ERR, nil)
+	var hdrbuf []byte
+	if int(hdrLen) > common.MAXBUF {
+		hdrbuf = make([]byte, hdrLen)
+	} else {
+		hdrbuf = make([]byte, common.MAXBUF)
 	}
-	err = proto.Unmarshal(bufs[0][hbytes:datOff], data.hdr)
+
+	// We read not only the header length varint encoding, but maybe one byte of
+	// the header itself, copy that into the header buf
+	total = total - hbytes
+	if total > 0 {
+		copy(hdrbuf[0:], hlenBuf[hbytes:hbytes+total])
+	}
+
+	// read the complete nxthdr.
+	for {
+		if total >= int(hdrLen) {
+			break
+		}
+		r, err := session.conn.Read(hdrbuf[total:hdrLen])
+		total += r
+		if err != nil && (err != io.EOF || r == 0) {
+			return 0, nil, 0, common.Err(common.CONNECTION_ERR, err)
+		}
+	}
+	var hdr nxthdr.NxtHdr
+	err := proto.Unmarshal(hdrbuf[0:hdrLen], &hdr)
 	if err != nil {
-		return 0, nil, 0, common.Err(common.GENERAL_ERR, err)
+		return 0, nil, 0, common.Err(common.CONNECTION_ERR, err)
 	}
-	data.data = append(net.Buffers{bufs[0][datOff:]}, bufs[1:]...)
+	// Just sanity check for ridiculous values so we dont end up affecting
+	// all sessions
+	if hdr.Datalen > 1024*1024 {
+		return 0, nil, 0, common.Err(common.CONNECTION_ERR, nil)
+	}
+	// Read in all the data.
+	total = 0
+	off := 0
+	end := 0
+	databuf := make([]byte, common.MAXBUF)
+	data := &nxtData{data: net.Buffers{}, hdr: &hdr}
+	for {
+		remaining := int(hdr.Datalen) - total
+		if remaining == 0 || off >= common.MAXBUF {
+			if off != 0 {
+				data.data = append(data.data, databuf[0:off])
+				if remaining != 0 {
+					databuf = make([]byte, common.MAXBUF)
+					off = 0
+				}
+			}
+		}
+		if remaining == 0 {
+			break
+		}
+		if off+remaining >= common.MAXBUF {
+			end = common.MAXBUF
+		} else {
+			end = off + remaining
+		}
+		r, err := session.conn.Read(databuf[off:end])
+		total += r
+		off += r
+		if err != nil && (err != io.EOF || r == 0) {
+			return 0, nil, 0, common.Err(common.CONNECTION_ERR, err)
+		}
+	}
+
 	dtype := streamData
 	// TODO: Flow control message type to be checked once its available
 	if data.hdr.Streamop == nxthdr.NxtHdr_CLOSE {
@@ -165,11 +221,24 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 	return data.hdr.Streamid, data, dtype, nil
 }
 
+// Note: If we write any byte of data on to the wire and THEN detect some
+// kind of error, we have NO OPTION but to close the entire session because
+// then we break the framing format on the wire. Hence make sure all validations
+// happen before writing onto the wire. The only error we should expect after writing to
+// the wire is some write error itself
 func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
+
+	stream.session.wlock.Lock()
+	defer stream.session.wlock.Unlock()
 
 	// This is what identifies us as a stream to the other end
 	data.hdr.Streamid = stream.stream
 	data.hdr.Streamop = nxthdr.NxtHdr_NOOP
+	total := 0
+	for _, b := range data.data {
+		total += len(b)
+	}
+	data.hdr.Datalen = uint32(total)
 
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(data.hdr)
@@ -179,36 +248,34 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 	hdrlen := len(out)
 	var varint [common.MAXVARINT_BUF]byte
 	plen := binary.PutUvarint(varint[0:], uint64(hdrlen))
-	newbuf := make([]byte, plen+hdrlen)
-	copy(newbuf[0:], varint[0:plen])
-	copy(newbuf[plen:], out)
-
-	stream.session.wlock.Lock()
-	w, err := stream.session.conn.NextWriter(websocket.BinaryMessage)
+	_, err = stream.session.conn.Write(varint[0:plen])
 	if err != nil {
-		stream.session.wlock.Unlock()
-		return common.Err(common.GENERAL_ERR, err)
+		return common.Err(common.CONNECTION_ERR, err)
 	}
-	nbuf := append(net.Buffers{newbuf}, data.data...)
-	_, err = nbuf.WriteTo(w)
+	_, err = stream.session.conn.Write(out[0:])
 	if err != nil {
-		stream.session.wlock.Unlock()
-		stream.lg.Println("Stream write error", stream.stream, err)
-		return common.Err(common.GENERAL_ERR, err)
+		return common.Err(common.CONNECTION_ERR, err)
 	}
-	err = w.Close()
-	if err != nil {
-		stream.session.wlock.Unlock()
-		stream.lg.Println("Stream write close error", stream.stream, err)
-		return common.Err(common.GENERAL_ERR, err)
+	for _, b := range data.data {
+		_, err = stream.session.conn.Write(b[0:])
+		if err != nil {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
 	}
-	stream.session.wlock.Unlock()
 
 	return nil
 }
 
+// Note: If we write any byte of data on to the wire and THEN detect some
+// kind of error, we have NO OPTION but to close the entire session because
+// then we break the framing format on the wire. Hence make sure all validations
+// happen before writing onto the wire. The only error we should expect after writing to
+// the wire is some write error itself
 func nxtWriteClose(stream *WebStream) *common.NxtError {
-	hdr := nxthdr.NxtHdr{Streamid: stream.stream, Streamop: nxthdr.NxtHdr_CLOSE}
+	stream.session.wlock.Lock()
+	defer stream.session.wlock.Unlock()
+
+	hdr := nxthdr.NxtHdr{Streamid: stream.stream, Streamop: nxthdr.NxtHdr_CLOSE, Datalen: 0}
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(&hdr)
 	if err != nil {
@@ -217,28 +284,14 @@ func nxtWriteClose(stream *WebStream) *common.NxtError {
 	hdrlen := len(out)
 	var varint [common.MAXVARINT_BUF]byte
 	plen := binary.PutUvarint(varint[0:], uint64(hdrlen))
-	newbuf := make([]byte, plen+hdrlen)
-	copy(newbuf[0:], varint[0:plen])
-	copy(newbuf[plen:], out)
-
-	stream.session.wlock.Lock()
-	w, err := stream.session.conn.NextWriter(websocket.BinaryMessage)
+	_, err = stream.session.conn.Write(varint[0:plen])
 	if err != nil {
-		stream.session.wlock.Unlock()
-		return common.Err(common.GENERAL_ERR, err)
+		return common.Err(common.CONNECTION_ERR, err)
 	}
-	nbuf := net.Buffers{newbuf}
-	_, err = nbuf.WriteTo(w)
+	_, err = stream.session.conn.Write(out[0:])
 	if err != nil {
-		stream.session.wlock.Unlock()
-		return common.Err(common.GENERAL_ERR, err)
+		return common.Err(common.CONNECTION_ERR, err)
 	}
-	err = w.Close()
-	if err != nil {
-		stream.session.wlock.Unlock()
-		return common.Err(common.GENERAL_ERR, err)
-	}
-	stream.session.wlock.Unlock()
 
 	return nil
 }
@@ -251,12 +304,141 @@ func closeAllStreams(session *webSession) {
 	session.slock.Unlock()
 }
 
+// Read byte by byte (not efficient yes) till we get a \r\n. We read
+// byte by byte to avoid having to buffer extra data etc.. Keeps code simple
+func upgradeParseServer(lg *log.Logger, session *webSession) *common.NxtError {
+	var char [1]byte
+	line := ""
+	cr := false
+	nl := false
+	key := ""
+	for {
+		r, err := session.conn.Read(char[0:])
+		if err != nil && (err != io.EOF || r == 0) {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		line = line + string(char[0])
+		if char[0] == '\r' {
+			cr = true
+		}
+		if char[0] == '\n' {
+			nl = true
+		}
+		if cr && nl {
+			if len(line) == 2 {
+				// The last \r\n
+				break
+			} else {
+				reg, _ := regexp.Compile("sec-websocket-key[\t ]*:[\t ]*(.+)[\t ]*\r\n")
+				match := reg.FindStringSubmatch(line)
+				if len(match) == 2 {
+					key = match[1]
+				}
+			}
+			line = ""
+			cr = false
+			nl = false
+		}
+	}
+	if key == "" {
+		return common.Err(common.CONNECTION_ERR, nil)
+	}
+	data := key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	h := sha1.New()
+	io.WriteString(h, data)
+	sEnc := b64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	resp := "HTTP/1.1 101 Switching Protocols\r\n"
+	resp += "Upgrade: websocket\r\n"
+	resp += "Connection: Upgrade\r\n"
+	resp += "Sec-WebSocket-Accept: " + sEnc + "\r\n"
+	resp += "\r\n"
+	_, err := session.conn.Write([]byte(resp))
+	if err != nil {
+		return common.Err(common.CONNECTION_ERR, err)
+	}
+
+	return nil
+}
+
+// Read byte by byte (not efficient yes) till we get a \r\n. We read
+// byte by byte to avoid having to buffer extra data etc.. Keeps code simple
+func upgradeParseClient(lg *log.Logger, session *webSession) *common.NxtError {
+	var char [1]byte
+	line := ""
+	cr := false
+	nl := false
+	for {
+		r, err := session.conn.Read(char[0:])
+		if err != nil && (err != io.EOF || r == 0) {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		line = line + string(char[0])
+		if char[0] == '\r' {
+			cr = true
+		}
+		if char[0] == '\n' {
+			nl = true
+		}
+		if cr && nl {
+			if len(line) == 2 {
+				// The last \r\n
+				break
+			}
+			line = ""
+			cr = false
+			nl = false
+		}
+	}
+
+	return nil
+}
+
+func upgradeWrite(lg *log.Logger, stream *WebStream) *common.NxtError {
+	req := "GET / HTTP/1.1\r\n"
+	req += fmt.Sprintf("Host: %s:%d\r\n", stream.serverName, stream.port)
+	req += "Upgrade: websocket\r\n"
+	req += "Connection: Upgrade\r\n"
+	req += "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+	req += "Sec-WebSocket-Version: 13\r\n"
+	req += "User-Agent: Go-http-client/1.1\r\n"
+	for name, values := range stream.requestHeader {
+		for _, value := range values {
+			req += fmt.Sprintf("%s: %s\r\n", name, value)
+		}
+	}
+	req += "\r\n"
+
+	_, err := stream.session.conn.Write([]byte(req))
+	if err != nil {
+		return common.Err(common.CONNECTION_ERR, err)
+	}
+
+	return nil
+}
+
 func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c chan common.NxtStream) {
+	if session.server {
+		err := upgradeParseServer(lg, session)
+		if err != nil {
+			lg.Println("Session upgrade read error", session.server, err)
+			session.conn.Close()
+			return
+		}
+	} else {
+		err := upgradeParseClient(lg, session)
+		if err != nil {
+			lg.Println("Session pugrade read error", session.server, err)
+			session.conn.Close()
+			return
+		}
+	}
+
 	Suuid := uuid.New()
 	for {
 		sid, data, dtype, err := nxtRead(session)
 		if err != nil {
-			lg.Println("Session read error", err)
+			lg.Println("Session read error", session.server, err)
 			closeAllStreams(session)
 			session.conn.Close()
 			return
@@ -362,85 +544,43 @@ func streamWrite(h *WebStream) {
 	}
 }
 
-func wsPing(session *webSession) {
-	for {
-		session.wlock.Lock()
-		err := session.conn.WriteMessage(websocket.PingMessage, nil)
-		session.wlock.Unlock()
-		if err != nil {
-			return
-		}
-		time.Sleep(pingPeriod)
-	}
-}
-
-func wsEndpoint(h *WebStream, c chan common.NxtStream, w http.ResponseWriter, r *http.Request) {
-	upgrader.CheckOrigin = func(r *http.Request) bool {
-		return true
-	}
-
-	s, e := upgrader.Upgrade(w, r, nil)
-	if e != nil {
-		h.lg.Println("upgrade error", e)
-		return
-	}
-	var session *webSession = &webSession{
-		server:     true,
-		conn:       s,
-		nextStream: 0,
-		streams:    make(map[uint64]*WebStream),
-	}
-	go sessionRead(h.ctx, h.lg, session, c)
-	go wsPing(session)
-}
-
 func (h *WebStream) Listen(c chan common.NxtStream) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		wsEndpoint(h, c, w, r)
-	})
 	addr := ":" + strconv.Itoa(h.port)
 
+	var tlsConfig *tls.Config
 	if len(h.pubKey) != 0 {
 		tlsCert, err := tls.X509KeyPair(h.pubKey, h.pvtKey)
 		if err != nil {
 			panic(err)
 		}
-		config := &tls.Config{
+		tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{tlsCert},
 			NextProtos:   []string{"nextensio-websocket"},
 		}
-		server := http.Server{
-			Addr: addr, Handler: mux,
-			TLSConfig: config,
-		}
-		err = server.ListenAndServeTLS("", "")
-		if err != nil {
-			h.lg.Println("Http listen failed")
-			return
-		}
+	}
+	var listener net.Listener
+	if tlsConfig != nil {
+		listener, _ = tls.Listen("tcp", addr, tlsConfig)
 	} else {
-		server := http.Server{
-			Addr: addr, Handler: mux,
-		}
-		err := server.ListenAndServe()
-		if err != nil {
-			h.lg.Println("Http listen failed", err)
-			return
+		listener, _ = net.Listen("tcp", addr)
+	}
+	for {
+		conn, err := listener.Accept()
+		if err == nil {
+			var session *webSession = &webSession{
+				server:     true,
+				conn:       conn,
+				nextStream: 0,
+				streams:    make(map[uint64]*WebStream),
+			}
+			go sessionRead(h.ctx, h.lg, session, c)
 		}
 	}
 }
 
 func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 
-	addr := h.serverIP + ":" + strconv.Itoa(h.port)
-	dialer := websocket.Dialer{
-		Proxy:            http.ProxyFromEnvironment,
-		HandshakeTimeout: 45 * time.Second,
-		ReadBufferSize:   common.MAXBUF,
-		WriteBufferSize:  common.MAXBUF / 2,
-	}
-	var u url.URL
+	var tlsConf *tls.Config
 
 	if len(h.caCert) != 0 {
 		certificate, err := selfsign.GenerateSelfSignedWithDNS(h.serverName, h.serverName)
@@ -457,28 +597,29 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 			return common.Err(common.GENERAL_ERR, err)
 		}
 		certPool.AddCert(cert)
-		tlsConf := &tls.Config{
+		tlsConf = &tls.Config{
 			Certificates: []tls.Certificate{certificate},
 			RootCAs:      certPool,
 			ServerName:   h.serverName,
 			MinVersion:   tls.VersionTLS12,
 			//InsecureSkipVerify: true,
 		}
-		dialer.TLSClientConfig = tlsConf
-		u = url.URL{Scheme: "wss", Host: addr, Path: "/"}
-	} else {
-		u = url.URL{Scheme: "ws", Host: addr, Path: "/"}
 	}
-
-	s, _, err := dialer.Dial(u.String(), h.requestHeader)
+	addr := fmt.Sprintf("%s:%d", h.serverIP, h.port)
+	var conn net.Conn
+	var err error
+	if tlsConf != nil {
+		conn, err = tls.Dial("tcp", addr, tlsConf)
+	} else {
+		conn, err = net.Dial("tcp", addr)
+	}
 	if err != nil {
-		h.lg.Println("Cannot dial websocket", addr, err)
+		h.lg.Println("Cannot dial websocket", h.serverIP, h.port, err)
 		return common.Err(common.CONNECTION_ERR, err)
 	}
-
 	var session *webSession = &webSession{
 		server:     false,
-		conn:       s,
+		conn:       conn,
 		nextStream: 0,
 		streams:    make(map[uint64]*WebStream),
 	}
@@ -490,6 +631,12 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 	h.streamClosed = make(chan struct{})
 	h.session = session
 	h.stream = 0
+
+	e := upgradeWrite(h.lg, h)
+	if e != nil {
+		h.lg.Println("Cannot write upgrade request")
+		return e
+	}
 
 	go sessionRead(h.ctx, h.lg, session, sChan)
 	atomic.AddInt32(&session.nthreads, 1)

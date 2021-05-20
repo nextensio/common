@@ -364,6 +364,12 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 }
 
 func (b *httpBody) readData(data nxtData) error {
+	total := 0
+	for _, b := range data.data {
+		total += len(b)
+	}
+	data.hdr.Datalen = uint32(total)
+
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(data.hdr)
 	if err != nil {
@@ -374,9 +380,7 @@ func (b *httpBody) readData(data nxtData) error {
 	var varint1 [common.MAXVARINT_BUF]byte
 	plen1 := binary.PutUvarint(varint1[0:], uint64(hdrlen))
 	dataLen := plen1 + hdrlen
-	for i := 0; i < len(data.data); i++ {
-		dataLen += len(data.data[i])
-	}
+	dataLen += total
 	// Encode the total length including nextensio headers, header length and payload
 	var varint2 [common.MAXVARINT_BUF]byte
 	plen2 := binary.PutUvarint(varint2[0:], uint64(dataLen))

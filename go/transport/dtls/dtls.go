@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 
 	"github.com/google/uuid"
@@ -143,6 +143,12 @@ func (d *Dtls) NewStream(hdr http.Header) common.Transport {
 
 func (d *Dtls) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 
+	total := 0
+	for _, b := range buf {
+		total += len(b)
+	}
+	hdr.Datalen = uint32(total)
+
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(hdr)
 	if err != nil {
@@ -152,9 +158,7 @@ func (d *Dtls) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	var varint [common.MAXVARINT_BUF]byte
 	plen := binary.PutUvarint(varint[0:], uint64(hdrlen))
 	dataLen := plen + hdrlen
-	for i := 0; i < len(buf); i++ {
-		dataLen += len(buf[0])
-	}
+	dataLen += total
 	newbuf := make([]byte, dataLen)
 	copy(newbuf[0:], varint[0:plen])
 	copy(newbuf[plen:], out)
