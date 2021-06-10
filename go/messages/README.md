@@ -13,11 +13,11 @@ The protobuf code for the Rust agent is auto-generated when the Rust agent is bu
   
    The above will put protoc-gen-go in your $GOPATH:/bin, so $GOPATH:/bin has to be in your PATH
 
-3. To generate go code, run the below command in the common/proto directory:
+3. To generate go code, run the below command in this directory:
    protoc --go_out=. ./nxt_hdr.proto -I ./
 
    It will generate the protobuf go code in
-       common/proto/gitlab.com/nextensio/common/messages/nxthdr/nxt_hdr.pb.go
+       ./gitlab.com/nextensio/common/messages/nxthdr/nxt_hdr.pb.go
    Copy that go file to
-       common/go/messages/nxthdr/nxt_hdr.pb.go
-   After that, the common/proto/gitlab.com/ subdirectory can be removed.
+       ./nxthdr/nxt_hdr.pb.go
+   After that, the ./gitlab.com/ subdirectory can be removed.
