@@ -82,6 +82,7 @@ message NxtHdr {
     NOOP = 0;
     CLOSE = 1;
     FLOW_CONTROL = 2;
+    KEEP_ALIVE = 3;
   }
   STREAM_OP streamop = 3;
   oneof hdr {
