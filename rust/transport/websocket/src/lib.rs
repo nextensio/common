@@ -386,7 +386,7 @@ fn retry_previous_pending(
                 *pending_tx_offset += size;
                 if *pending_tx_offset == pending.len() {
                     // pending_tx_hdr is None at this point
-                    return Ok(());
+                    // break out and call write_data below if theres data to send
                 } else {
                     *pending_tx_hdr = Some(pending);
                     return Err(NxtError {
