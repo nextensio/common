@@ -75,6 +75,7 @@ type HttpStream struct {
 	txData        httpBody
 	sChan         chan common.NxtStream // unused
 	nthreads      int32
+	totThreads    *int32
 	listener      *HttpStream
 	cascade       common.Transport
 	client        *http.Client
@@ -84,20 +85,22 @@ type HttpStream struct {
 // clientUuidHdr: On the server, to be able to identify which streams come from the same client, we need to
 // tell the server to look for a particular http header name whose value will be the client's
 // unique identify (uuid). So all streams with the same value for that http header, are from the same client
-func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, clientUuidHdr string) *HttpStream {
+func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, clientUuidHdr string, totThreads *int32) *HttpStream {
 	return &HttpStream{
 		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		clientUuidHdr: clientUuidHdr,
 		addr:          ":" + strconv.Itoa(port),
+		totThreads:    totThreads,
 	}
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
-func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header) *HttpStream {
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32) *HttpStream {
 	h := HttpStream{
 		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
 		streamClosed:  make(chan struct{}),
+		totThreads:    totThreads,
 	}
 	h.txData = httpBody{h: &h, txChan: make(chan nxtData)}
 
@@ -168,6 +171,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				stream.Close()
 				atomic.AddInt32(&stream.listener.nthreads, -1)
+				if stream.totThreads != nil {
+					atomic.AddInt32(stream.totThreads, -1)
+				}
 				return
 			}
 			lenBytes++
@@ -194,6 +200,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 			if err != nil && err != io.EOF {
 				stream.Close()
 				atomic.AddInt32(&stream.listener.nthreads, -1)
+				if stream.totThreads != nil {
+					atomic.AddInt32(stream.totThreads, -1)
+				}
 				return
 			}
 			remaining -= n
@@ -202,6 +211,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 				// well, stream ended and we havent got all our bytes, so close the stream
 				stream.Close()
 				atomic.AddInt32(&stream.listener.nthreads, -1)
+				if stream.totThreads != nil {
+					atomic.AddInt32(stream.totThreads, -1)
+				}
 				return
 			}
 			if offset == end {
@@ -219,6 +231,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 		if hbytes <= 0 {
 			stream.Close()
 			atomic.AddInt32(&stream.listener.nthreads, -1)
+			if stream.totThreads != nil {
+				atomic.AddInt32(stream.totThreads, -1)
+			}
 			return
 		}
 		lenBytes += hbytes
@@ -226,6 +241,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			stream.Close()
 			atomic.AddInt32(&stream.listener.nthreads, -1)
+			if stream.totThreads != nil {
+				atomic.AddInt32(stream.totThreads, -1)
+			}
 			return
 		}
 		lenBytes += int(hdrLen)
@@ -240,6 +258,9 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 		case stream.rxData <- nxtData{hdr: hdr, data: retBuf}:
 		case <-stream.streamClosed:
 			atomic.AddInt32(&stream.listener.nthreads, -1)
+			if stream.totThreads != nil {
+				atomic.AddInt32(stream.totThreads, -1)
+			}
 			return
 		}
 	}
@@ -261,14 +282,21 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	}
 
 	atomic.AddInt32(&h.nthreads, 1)
+	if h.totThreads != nil {
+		atomic.AddInt32(h.totThreads, 1)
+	}
 	rxData := make(chan nxtData)
 	stream := &HttpStream{
 		ctx: h.ctx, lg: h.lg, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
+		totThreads: h.totThreads,
 	}
 	c <- common.NxtStream{Parent: u, Stream: stream}
 
 	atomic.AddInt32(&h.nthreads, 1)
+	if h.totThreads != nil {
+		atomic.AddInt32(h.totThreads, 1)
+	}
 	go bodyRead(stream, w, r)
 	for {
 		select {
@@ -277,6 +305,9 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 			w.Write([]byte("stream closed"))
 			stream.Close()
 			atomic.AddInt32(&h.nthreads, -1)
+			if h.totThreads != nil {
+				atomic.AddInt32(h.totThreads, -1)
+			}
 			return
 		}
 	}
@@ -346,6 +377,9 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 	// in the goroutine we described above. Since as of today this is a unidirectional
 	// stream, we dont care about the response at all
 	atomic.AddInt32(&h.nthreads, 1)
+	if h.totThreads != nil {
+		atomic.AddInt32(h.totThreads, 1)
+	}
 	go func(h *HttpStream) {
 		resp, err := h.client.Do(req)
 		if err == nil {
@@ -356,6 +390,9 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		}
 		h.Close()
 		atomic.AddInt32(&h.nthreads, -1)
+		if h.totThreads != nil {
+			atomic.AddInt32(h.totThreads, -1)
+		}
 	}(h)
 
 	h.sChan = sChan
@@ -374,6 +411,9 @@ func (b *httpBody) readData(data nxtData) error {
 	out, err := proto.Marshal(data.hdr)
 	if err != nil {
 		atomic.AddInt32(&b.h.nthreads, -1)
+		if b.h.totThreads != nil {
+			atomic.AddInt32(b.h.totThreads, -1)
+		}
 		return err
 	}
 	hdrlen := len(out)
@@ -403,6 +443,9 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 
 	if !b.once {
 		atomic.AddInt32(&b.h.nthreads, 1)
+		if b.h.totThreads != nil {
+			atomic.AddInt32(b.h.totThreads, 1)
+		}
 		b.once = true
 	}
 	if b.bufs == nil {
@@ -422,6 +465,9 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 				}
 			default:
 				atomic.AddInt32(&b.h.nthreads, -1)
+				if b.h.totThreads != nil {
+					atomic.AddInt32(b.h.totThreads, -1)
+				}
 				return 0, io.EOF
 			}
 		}
@@ -512,6 +558,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		ctx: h.ctx, lg: h.lg, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
 		requestHeader: hdr,
 		streamClosed:  make(chan struct{}),
+		totThreads:    h.totThreads,
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr

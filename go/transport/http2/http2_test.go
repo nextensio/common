@@ -76,7 +76,7 @@ func http2sockServer(ctx context.Context, encrypted bool, sChan chan common.NxtS
 		pvtKey, pubKey = getKeys()
 	}
 	lg := log.New(os.Stdout, "test", 0)
-	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, "x-nextensio-uuid")
+	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, "x-nextensio-uuid", nil)
 	go server.Listen(sChan)
 	for {
 		select {
@@ -108,7 +108,7 @@ func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serve
 	hdrs := make(http.Header)
 	hdrs.Add("x-nextensio-uuid", myUuid)
 	lg := log.New(os.Stdout, "test", 0)
-	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs)
+	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs, nil)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++
