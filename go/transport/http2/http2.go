@@ -65,7 +65,6 @@ type HttpStream struct {
 	pubKey        []byte
 	caCert        []byte
 	requestHeader http.Header
-	clientUuidHdr string
 	streamClosed  chan struct{}
 	closed        bool
 	closeLock     sync.Mutex
@@ -82,15 +81,11 @@ type HttpStream struct {
 	addr          string
 }
 
-// clientUuidHdr: On the server, to be able to identify which streams come from the same client, we need to
-// tell the server to look for a particular http header name whose value will be the client's
-// unique identify (uuid). So all streams with the same value for that http header, are from the same client
-func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, clientUuidHdr string, totThreads *int32) *HttpStream {
+func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, totThreads *int32) *HttpStream {
 	return &HttpStream{
 		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
-		clientUuidHdr: clientUuidHdr,
-		addr:          ":" + strconv.Itoa(port),
-		totThreads:    totThreads,
+		addr:       ":" + strconv.Itoa(port),
+		totThreads: totThreads,
 	}
 }
 
@@ -270,16 +265,6 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	if r.ProtoMajor != 2 {
 		panic("We are expecting http2 with prior knowledge")
 	}
-	client := r.Header.Get(h.clientUuidHdr)
-	if client == "" {
-		http.Error(w, "No header "+h.clientUuidHdr, http.StatusInternalServerError)
-		return
-	}
-	u, err := uuid.Parse(client)
-	if err != nil {
-		http.Error(w, "Bad uuid "+client, http.StatusInternalServerError)
-		return
-	}
 
 	atomic.AddInt32(&h.nthreads, 1)
 	if h.totThreads != nil {
@@ -291,7 +276,11 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 		listener: h, streamClosed: make(chan struct{}),
 		totThreads: h.totThreads,
 	}
-	c <- common.NxtStream{Parent: u, Stream: stream}
+
+	// Golang http2 lib handles the "session" (ie "parent") inside the lib, we dont
+	// have control over it. When we ask to create an http2 session, it can reuse an
+	// existing session or open a new one, so we really cant predict the "parent" session
+	c <- common.NxtStream{Parent: uuid.UUID{}, Stream: stream}
 
 	atomic.AddInt32(&h.nthreads, 1)
 	if h.totThreads != nil {
