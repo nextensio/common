@@ -177,3 +177,13 @@ func (w *InplaceSerialize) PushLayer(l gopacket.LayerType) {
 func NewInplaceSerializeBuffer(data []byte, start int) gopacket.SerializeBuffer {
 	return &InplaceSerialize{data: data, start: start}
 }
+
+// All the yaml files add nxt- to the tenant name to prevent a tenant name from
+// clashing with an existing k8s service like 'prometheus'
+func TenantToNamespace(tenant string) string {
+	return "nxt-" + tenant
+}
+
+func NamespaceToTenant(ns string) string {
+	return ns[4:]
+}
