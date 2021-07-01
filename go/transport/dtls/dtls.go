@@ -64,7 +64,7 @@ func (d *Dtls) Listen(c chan common.NxtStream) {
 		conn, err := d.listener.Accept()
 		if err != nil {
 			d.lg.Printf("Listen error %v", err)
-			continue
+			return
 		}
 		client := &Dtls{conn: conn.(*dtls.Conn), lg: d.lg}
 		c <- common.NxtStream{Parent: uuid.New(), Stream: client}
@@ -111,6 +111,13 @@ func (d *Dtls) Dial(sChan chan common.NxtStream) *common.NxtError {
 }
 
 func (d *Dtls) Close() *common.NxtError {
+	if d.listener != nil {
+		err := d.listener.Close()
+		if err != nil {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		return nil
+	}
 	if d.conn != nil {
 		d.closed = true
 		err := d.conn.Close()

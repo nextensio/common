@@ -252,6 +252,9 @@ func (p *Proxy) Dial(sChan chan common.NxtStream) *common.NxtError {
 }
 
 func (p *Proxy) Close() *common.NxtError {
+	// If we are closing the listener itself, its p.device that we should be
+	// closing. But we dont "own" p.device, its passed to us in NewClient().
+	// So to close the listener, we expect the caller to close the device
 	if p.tcp != nil {
 		p.tcp.Close()
 	} else if p.udp != nil {

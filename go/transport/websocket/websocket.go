@@ -63,6 +63,7 @@ type nxtData struct {
 type WebStream struct {
 	ctx           context.Context
 	lg            *log.Logger
+	listener      *net.Listener
 	serverIP      string
 	serverName    string
 	port          int
@@ -564,17 +565,19 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 	} else {
 		listener, _ = net.Listen("tcp", addr)
 	}
+	h.listener = &listener
 	for {
 		conn, err := listener.Accept()
-		if err == nil {
-			var session *webSession = &webSession{
-				server:     true,
-				conn:       conn,
-				nextStream: 0,
-				streams:    make(map[uint64]*WebStream),
-			}
-			go sessionRead(h.ctx, h.lg, session, c)
+		if err != nil {
+			return
 		}
+		var session *webSession = &webSession{
+			server:     true,
+			conn:       conn,
+			nextStream: 0,
+			streams:    make(map[uint64]*WebStream),
+		}
+		go sessionRead(h.ctx, h.lg, session, c)
 	}
 }
 
@@ -655,6 +658,13 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 //    hashtables/datastructures, because we know there wont be any more packets on that stream
 //    from the other end
 func (h *WebStream) Close() *common.NxtError {
+	if h.listener != nil {
+		err := (*h.listener).Close()
+		if err != nil {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		return nil
+	}
 	if h.session == nil {
 		return nil
 	}

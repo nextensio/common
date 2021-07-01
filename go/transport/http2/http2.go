@@ -58,6 +58,7 @@ type httpBody struct {
 type HttpStream struct {
 	ctx           context.Context
 	lg            *log.Logger
+	httpServer    *http.Server
 	serverIP      string
 	serverName    string
 	port          int
@@ -322,6 +323,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 			Addr: addr, Handler: mux,
 			TLSConfig: config,
 		}
+		h.httpServer = &server
 		err = server.ListenAndServeTLS("", "")
 		if err != nil {
 			h.lg.Println("Https listen failed")
@@ -332,6 +334,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 		server := http.Server{
 			Addr: addr, Handler: h2c.NewHandler(mux, &s2),
 		}
+		h.httpServer = &server
 		err := server.ListenAndServe()
 		if err != nil {
 			h.lg.Println("Http listen failed")
@@ -493,6 +496,13 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 }
 
 func (h *HttpStream) Close() *common.NxtError {
+	if h.httpServer != nil {
+		err := (*h.httpServer).Close()
+		if err != nil {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		return nil
+	}
 	// Ideally this cascade close needs to happen only if the Close() is coming from
 	// within the state machine here where the state machine decides to close the session.
 	// If a user manually calls Close, the user can manually remember that they have to

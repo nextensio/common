@@ -12,21 +12,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
 type Proxy struct {
-	ctx    context.Context
-	lg     *log.Logger
-	listen uint16
-	conn   net.Conn
-	src    string
-	sport  uint16
-	dest   string
-	dport  uint16
-	closed bool
-	hdr    *nxthdr.NxtHdr
+	ctx      context.Context
+	lg       *log.Logger
+	listen   uint16
+	listener *http.Server
+	conn     net.Conn
+	src      string
+	sport    uint16
+	dest     string
+	dport    uint16
+	closed   bool
+	hdr      *nxthdr.NxtHdr
 }
 
 func NewListener(ctx context.Context, lg *log.Logger, port uint16) *Proxy {
@@ -112,6 +113,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 		// Disable HTTP/2.
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
+	p.listener = server
 	server.ListenAndServe()
 }
 
@@ -120,6 +122,13 @@ func (p *Proxy) Dial(sChan chan common.NxtStream) *common.NxtError {
 }
 
 func (p *Proxy) Close() *common.NxtError {
+	if p.listener != nil {
+		err := p.listener.Close()
+		if err != nil {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		return nil
+	}
 	if !p.closed {
 		p.conn.Close()
 		p.closed = true

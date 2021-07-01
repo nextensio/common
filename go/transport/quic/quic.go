@@ -31,6 +31,7 @@ import (
 type Quic struct {
 	ctx       context.Context
 	lg        *log.Logger
+	listener  *quic.Listener
 	server    string
 	port      int
 	pvtKey    []byte
@@ -80,6 +81,7 @@ func (q *Quic) Listen(c chan common.NxtStream) {
 	if err != nil {
 		return
 	}
+	q.listener = &listener
 	for {
 		sess, err := listener.Accept(context.Background())
 		if err != nil {
@@ -127,6 +129,13 @@ func (q *Quic) Dial(sChan chan common.NxtStream) *common.NxtError {
 
 func (q *Quic) Close() *common.NxtError {
 	var err error
+	if q.listener != nil {
+		err := (*q.listener).Close()
+		if err != nil {
+			return common.Err(common.CONNECTION_ERR, err)
+		}
+		return nil
+	}
 	// TODO: Need to check go-quick source code to see if stream.Close() is thread safe,
 	// if it is then we dont need this lock
 	q.writeLock.Lock()
