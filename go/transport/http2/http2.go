@@ -326,7 +326,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 		h.httpServer = &server
 		err = server.ListenAndServeTLS("", "")
 		if err != nil {
-			h.lg.Println("Https listen failed")
+			h.lg.Println("Https listen failed", err)
 			return
 		}
 	} else {
@@ -337,7 +337,7 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 		h.httpServer = &server
 		err := server.ListenAndServe()
 		if err != nil {
-			h.lg.Println("Http listen failed")
+			h.lg.Println("Http listen failed", err)
 			return
 		}
 	}

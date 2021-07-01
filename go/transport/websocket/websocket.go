@@ -569,6 +569,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
+			h.lg.Println("Websocket listen failed", err, h.port)
 			return
 		}
 		var session *webSession = &webSession{
