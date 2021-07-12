@@ -145,7 +145,7 @@ func makeHdr(p *Proxy) *nxthdr.NxtHdr {
 	flow.Sport = uint32(p.sport)
 	flow.Dest = p.dip.String()
 	flow.Dport = uint32(p.dport)
-	flow.DestAgent = flow.Dest // This will get overridden once we parse http/sni
+	flow.DestSvc = flow.Dest // This will get overridden if http/sni parsing is succesful
 	flow.Type = nxthdr.NxtFlow_L4
 	if p.tcp != nil {
 		flow.Proto = common.TCP
@@ -369,9 +369,6 @@ func parseHTTP(p *Proxy, prev int) bool {
 			return false
 		}
 		p.service = req.Host
-		flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
-		flow.Dest = p.service
-		flow.DestAgent = p.service
 		return true
 	}
 
@@ -411,9 +408,6 @@ func parseTLS(p *Proxy) bool {
 	}
 	// The TLS SNI is our service name
 	p.service = hello.SNI
-	flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
-	flow.Dest = p.service
-	flow.DestAgent = p.service
 
 	return true
 }
@@ -446,6 +440,8 @@ func tcpParse(p *Proxy) {
 	if p.service == "" {
 		p.service = p.dip.String()
 	}
+	flow := p.hdr.Hdr.(*nxthdr.NxtHdr_Flow).Flow
+	flow.DestSvc = p.service
 	// Cancel the timeouts
 	p.tcp.SetReadDeadline(time.Time{})
 	// Parsing activity completed (succesfully or unsuccesfully)

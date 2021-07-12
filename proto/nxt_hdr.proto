@@ -26,18 +26,18 @@ message NxtOnboard {
 // in the return direction to get back to the same agent/connector
 //
 // destAgent: the service name of the dest agent/connector. This field may (or
-// may not) be the same as the "dest" field. For example if the dest field is a
-// private service like kismis.org, the destAgent will be the same as
-// kismis.org. But if the dest field is say google.com, then the destAgent can
-// be set to say default-internet. In other words, destAgent gives the sender
-// (agent/connector) flexibility to either say "route to whoever provides
+// may not) be the same as the "destSvc" field. For example if the destSvc field
+// is a private service like kismis.org, the destAgent will be the same as
+// kismis.org. But if the destSvc field is say google.com, then the destAgent
+// can be set to say default-internet. In other words, destAgent gives the
+// sender (agent/connector) flexibility to either say "route to whoever provides
 // flow.dest" by setting flow.destAgent same as flow.dest OR to say "route
 // exactly to this particular service" by setting a specific value for
 // flow.destAgent different from flow.dest. The cluster always routes based on
 // flow.destAgent field
 //
 // agentUuid: The unique id of the agent originating the flow. This is used only
-// in clusters and connectors, agents dont fill it or use it
+// in clusters and connectors, agents and connectors dont fill it or use it
 //
 // type: two types of nextensio flows - raw l3 packets, tcp/udp terminated l4
 //
@@ -47,7 +47,13 @@ message NxtOnboard {
 //
 // responseData: This indicates the direction of the data. The first data that
 // creates the flow is considered the request and the opposite direction is
-// considered response.
+// considered response. Agents dont fill this, connectors do fill this depending
+// on whether the flow is originated from the connector or originated via
+// gateway
+//
+// userCluster and userPod: This is also filled up only by clusters, agents and
+// connectors dont have to fill this in. This identifies the "source" cluster
+// and pod for the flow, to aid the return path in getting back to the source
 message NxtFlow {
   string source = 1;
   string dest = 2;
