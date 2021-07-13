@@ -68,10 +68,10 @@ var methods = []string{
 
 func makeHdr(p *NetConn, sourceIP string, localPort uint32) *nxthdr.NxtHdr {
 	flow := nxthdr.NxtFlow{}
-	flow.Source = sourceIP
-	flow.Sport = localPort
-	flow.Dest = p.dest
-	flow.Dport = p.port
+	flow.Source = p.dest
+	flow.Sport = p.port
+	flow.Dest = sourceIP
+	flow.Dport = localPort
 	flow.DestSvc = flow.Dest // This will get overridden if http/sni parsing is succesful
 	flow.Type = nxthdr.NxtFlow_L4
 	if p.proto == "tcp" {
