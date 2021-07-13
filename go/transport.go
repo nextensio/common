@@ -46,6 +46,7 @@ var LazyNoCopy = gopacket.DecodeOptions{Lazy: true, NoCopy: true}
 type NxtStream struct {
 	Parent uuid.UUID
 	Stream Transport
+	Http   *http.Header
 }
 
 // A nextensio transport consists of "sessions" and "streams". Think of a session to be

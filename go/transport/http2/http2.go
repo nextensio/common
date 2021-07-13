@@ -281,7 +281,7 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	// Golang http2 lib handles the "session" (ie "parent") inside the lib, we dont
 	// have control over it. When we ask to create an http2 session, it can reuse an
 	// existing session or open a new one, so we really cant predict the "parent" session
-	c <- common.NxtStream{Parent: uuid.UUID{}, Stream: stream}
+	c <- common.NxtStream{Parent: uuid.UUID{}, Stream: stream, Http: &r.Header}
 
 	atomic.AddInt32(&h.nthreads, 1)
 	if h.totThreads != nil {
