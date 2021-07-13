@@ -456,6 +456,15 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	select {
 	case <-p.parsed:
 	}
+
+	// Return a copy of the hdr
+	var hdr nxthdr.NxtHdr
+	var hdrP *nxthdr.NxtHdr = nil
+	if p.hdr != nil {
+		hdr = *p.hdr
+		hdrP = &hdr
+	}
+
 	// We have some data buffered as part of the tcp parsing, return that first
 	// and read the next set of data in the next call to Read()
 	if p.parseLen != 0 {
@@ -463,7 +472,7 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 		p.parseLen = 0
 		buf := net.Buffers{p.parse[0:n]}
 		p.parse = nil
-		return p.hdr, buf, nil
+		return hdrP, buf, nil
 	}
 
 	var err error
@@ -472,12 +481,12 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if p.tcp != nil {
 		n, err = p.tcp.Read(buf)
 		if err == nil || (err == io.EOF && n > 0) {
-			return p.hdr, net.Buffers{buf[:n]}, nil
+			return hdrP, net.Buffers{buf[:n]}, nil
 		}
 	} else if p.udp != nil {
 		n, err = p.udp.Read(buf)
 		if err == nil || (err == io.EOF && n > 0) {
-			return p.hdr, net.Buffers{buf[:n]}, nil
+			return hdrP, net.Buffers{buf[:n]}, nil
 		}
 	}
 	return nil, nil, common.Err(common.CONNECTION_ERR, err)

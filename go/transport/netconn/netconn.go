@@ -337,6 +337,14 @@ func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 		}
 	}
 
+	// Return a copy of the hdr
+	var hdr nxthdr.NxtHdr
+	var hdrP *nxthdr.NxtHdr = nil
+	if n.hdr != nil {
+		hdr = *n.hdr
+		hdrP = &hdr
+	}
+
 	// We have some data buffered as part of the tcp parsing, return that first
 	// and read the next set of data in the next call to Read()
 	if n.parseLen != 0 {
@@ -344,7 +352,7 @@ func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 		n.parseLen = 0
 		buf := net.Buffers{n.parse[0:l]}
 		n.parse = nil
-		return n.hdr, buf, nil
+		return hdrP, buf, nil
 	}
 
 	buf := make([]byte, common.MAXBUF)
@@ -354,7 +362,7 @@ func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 			return nil, nil, common.Err(common.CONNECTION_ERR, err)
 		}
 	}
-	return n.hdr, net.Buffers{buf[0:r]}, nil
+	return hdrP, net.Buffers{buf[0:r]}, nil
 }
 
 func (n *NetConn) SetReadDeadline(t time.Time) *common.NxtError {
