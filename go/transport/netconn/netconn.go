@@ -243,10 +243,10 @@ func (n *NetConn) Listen(c chan common.NxtStream) {
 	Suuid := uuid.New()
 	for {
 		conn, err := ln.Accept()
-		if err != nil {
+		if err == nil {
 			remote := strings.Split(conn.RemoteAddr().String(), ":")
 			port, e := strconv.Atoi(remote[1])
-			if e != nil {
+			if e == nil {
 				parse := make([]byte, TCP_PARSE_SZ)
 				parsed := make(chan struct{})
 				// We change the dest and port in the accepted stream to the "remote" values
