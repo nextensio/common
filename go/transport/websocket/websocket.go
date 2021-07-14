@@ -519,7 +519,6 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 		// Consider all data as keepalive
 		session.keepRx++
 		if dtype == streamKeepAlive {
-			lg.Println("Got keepalive")
 			continue
 		}
 		session.slock.Lock()
