@@ -75,6 +75,8 @@ message NxtFlow {
   string userPod = 14;
 }
 
+message NxtKeepalive {}
+
 // The streamid and streamop is used only in cases where nextensio itself
 // is providing stream operations on top of a bare transport like tcp/websocket.
 // But if the transport is like an http2/rsocket/quic etc.., then these fields
@@ -94,5 +96,6 @@ message NxtHdr {
   oneof hdr {
     NxtOnboard onboard = 4;
     NxtFlow flow = 5;
+    NxtKeepalive keepalive = 6;
   }
 }
