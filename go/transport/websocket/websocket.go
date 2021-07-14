@@ -376,6 +376,12 @@ func upgradeParseServer(lg *log.Logger, session *webSession) *common.NxtError {
 				match := reg.FindStringSubmatch(line)
 				if len(match) == 2 {
 					key = match[1]
+				} else {
+					reg, _ := regexp.Compile("Sec-WebSocket-Key[\t ]*:[\t ]*(.+)[\t ]*\r\n")
+					match := reg.FindStringSubmatch(line)
+					if len(match) == 2 {
+						key = match[1]
+					}
 				}
 			}
 			line = ""
@@ -495,7 +501,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 	} else {
 		err := upgradeParseClient(lg, session)
 		if err != nil {
-			lg.Println("Session pugrade read error", session.server, err)
+			lg.Println("Session upgrade read error", session.server, err)
 			sessionClose(session)
 			return
 		}

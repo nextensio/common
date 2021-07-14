@@ -77,7 +77,7 @@ func readStream(ctx context.Context, parent uuid.UUID, tunnel common.Transport) 
 func websockServer(ctx context.Context, sChan chan common.NxtStream) {
 	pvtKey, pubKey := getKeys()
 	lg := log.New(os.Stdout, "test", 0)
-	server := NewListener(ctx, lg, pvtKey, pubKey, testPort)
+	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, 0, 0)
 	go server.Listen(sChan)
 	for {
 		select {
@@ -105,7 +105,7 @@ func dialWebsock(ctx context.Context, serverName string, serverIP string, port i
 	var httpHdr = make(http.Header)
 	httpHdr.Add("x-nextensio-connect", "cpod-1")
 	httpHdr.Add("x-nextensio-agent", "foobar")
-	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, nil)
+	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, nil, 0)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++
