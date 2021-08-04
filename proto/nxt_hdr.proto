@@ -5,17 +5,16 @@ option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 // agent: true if its an agent, false for connector.
 // userid: username of the agent/connector
 // uuid: a unique identifier for the agent, if the same userid has multiple
-// devices, usually just a uuid.UUID suffices to be unique
+//       devices, usually just a uuid.UUID suffices to be unique
 // services: the service names advertised by this agent/connector
 // cluster: If the agent/connector is supposed to connect to a SPECIFIC cluster,
-// the cluster field indicates that cluster name
+//          the cluster field indicates that cluster name
 // podname: The name of the pod on the cluster that this agent/connector should
-// connect to
+//          connect to
 // connectId: Usually the agent/connectors username converted to a value that is
-// palatable to various kubernetes entities like istio http header matching
-// rules. This value is constructed by the controller
-// reOnboard: An onboard message from cluster to agent/connector asking it to
-// onboard with the controller again
+//            palatable to various kubernetes entities like istio http header
+//            matching rules. This value is constructed by the controller
+// hostname, model, os_xyz: device/operating system details
 message NxtOnboard {
   bool agent = 1;
   string userid = 2;
@@ -25,7 +24,13 @@ message NxtOnboard {
   string cluster = 6;
   string podname = 7;
   string connectId = 8;
-  bool reOnboard = 9;
+  string hostname = 9;
+  string model = 10;
+  string osType = 11;
+  string osName = 12;
+  uint32 osPatch = 13;
+  uint32 osMajor = 14;
+  uint32 osMinor = 15;
 }
 
 // source, dest, sport, dport, proto: standard five tuple associated with any
