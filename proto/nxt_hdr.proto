@@ -88,7 +88,7 @@ message NxtFlow {
   bool responseData = 12;
   string userCluster = 13;
   string userPod = 14;
-  string scanCtx = 15;
+  string spanCtx = 15;
 }
 
 message NxtKeepalive {}
