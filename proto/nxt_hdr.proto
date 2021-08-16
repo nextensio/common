@@ -89,6 +89,7 @@ message NxtFlow {
   string userCluster = 13;
   string userPod = 14;
   string spanCtx = 15;
+  repeated string spanTags = 16;
 }
 
 message NxtKeepalive {}
