@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common::{NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RegType};
+#[cfg(target_os = "windows")]
 use mio::windows::NamedPipe;
 use mio::{Interest, Poll, Token};
 use object_pool::Pool;
@@ -16,6 +17,11 @@ pub struct Pipe {
 // This is a non-blocking pipe. Right now only server mode supported, its easy to add client mode too
 
 impl Pipe {
+    #[cfg(not(target_os = "windows"))]
+    pub fn new_client(name: String, server: bool, pool: Arc<Pool<Vec<u8>>>) -> Option<Self> {
+        None
+    }
+    #[cfg(target_os = "windows")]
     pub fn new_client(name: String, server: bool, pool: Arc<Pool<Vec<u8>>>) -> Option<Self> {
         if let Ok(pipe) = NamedPipe::new(&name) {
             Some(Pipe {
@@ -30,6 +36,7 @@ impl Pipe {
     }
 }
 
+#[cfg(target_os = "windows")]
 impl common::Transport for Pipe {
     fn dial(&mut self) -> Result<(), NxtError> {
         match self.pipe.connect() {
