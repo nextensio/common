@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common::{get_maxbuf, NxtBufs, NxtErr, NxtError, RegType, HEADROOM};
 use libc::c_void;
+#[cfg(not(target_os = "windows"))]
 use mio::unix::SourceFd;
 use mio::{Interest, Poll, Token};
 use object_pool::Pool;
@@ -31,6 +32,7 @@ impl Fd {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 impl common::Transport for Fd {
     fn dial(&mut self) -> Result<(), NxtError> {
         Ok(())

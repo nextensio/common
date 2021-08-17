@@ -4,6 +4,7 @@ use common::{
 };
 use mio::{Interest, Poll, Token};
 use object_pool::{Pool, Reusable};
+#[cfg(not(target_os = "windows"))]
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::{io::Read, io::Write};
@@ -38,6 +39,7 @@ impl WebProxy {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 impl common::Transport for WebProxy {
     fn listen(&mut self) -> Result<Box<dyn Transport>, NxtError> {
         if self.socket.is_none() {
