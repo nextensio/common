@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::{NxtBufs, NxtErr, NxtError, RegType, NxtErr::EWOULDBLOCK, NxtErr::CONNECTION};
+use common::{NxtBufs, NxtErr, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RegType};
 use mio::windows::NamedPipe;
 use mio::{Interest, Poll, Token};
 use object_pool::Pool;
@@ -38,13 +38,13 @@ impl common::Transport for Pipe {
                     code: NxtErr::EWOULDBLOCK,
                     detail: format!("{}", e),
                 });
-            },
+            }
             Err(e) => {
                 return Err(common::NxtError {
                     code: NxtErr::CONNECTION,
                     detail: format!("{}", e),
                 });
-            },
+            }
             Ok(_) => return Ok(()),
         }
     }
@@ -57,13 +57,13 @@ impl common::Transport for Pipe {
     fn close(&mut self, _: u64) -> Result<(), NxtError> {
         if !self.closed {
             if let Ok(_) = self.pipe.disconnect() {
-            self.closed = true;
-            return Ok(());
+                self.closed = true;
+                return Ok(());
             } else {
                 return Err(common::NxtError {
                     code: NxtErr::CONNECTION,
                     detail: format!("{}", ""),
-                })
+                });
             }
         }
         Ok(())

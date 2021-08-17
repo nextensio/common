@@ -2,9 +2,11 @@ use super::*;
 use common::Transport;
 use core::time::Duration;
 
+// This test expects an external client to open a pipe and write some data to it,
+// and we (the server) just loops it back
 #[test]
 fn loopback() {
-    let  pool = Arc::new(Pool::new(100, || Vec::with_capacity(2048)));
+    let pool = Arc::new(Pool::new(100, || Vec::with_capacity(2048)));
     let mut pipe = Pipe::new_client(r"\\.\pipe\nextensio".to_string(), true, pool.clone()).unwrap();
 
     let mut events = mio::Events::with_capacity(2048);
@@ -18,13 +20,13 @@ fn loopback() {
     match pipe.dial() {
         Err(e) => match e.code {
             common::NxtErr::EWOULDBLOCK => {
-            // Ok
-            },
+                // Ok
+            }
             _ => panic!("Error dialling, {}", e),
         },
         Ok(_) => (),
     }
-    loop {        
+    loop {
         match poll.poll(&mut events, None) {
             Err(e) => println!("Error polling {:?}, retrying", e),
             Ok(_) => {}
@@ -35,7 +37,7 @@ fn loopback() {
                 Token(0) => {
                     if event.is_readable() {
                         println!("Got readable event");
-                        if let Ok(r) = pipe.read()  {
+                        if let Ok(r) = pipe.read() {
                             let (s, b) = r;
                             println!("Got pkt {} / {}", s, b.bufs[0].len());
                             if let Ok(_) = pipe.write(s, b) {
