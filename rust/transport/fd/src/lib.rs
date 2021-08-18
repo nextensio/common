@@ -221,3 +221,42 @@ impl common::Transport for Fd {
         Ok(())
     }
 }
+
+// TODO: Windows does not support file descriptors
+#[cfg(target_os = "windows")]
+impl common::Transport for Fd {
+    fn new_stream(&mut self) -> u64 {
+        0
+    }
+    fn close(&mut self, _: u64) -> Result<(), NxtError> {
+        Err(common::NxtError {
+            code: common::NxtErr::GENERAL,
+            detail: "unsupported".to_string(),
+        })
+    }
+    fn is_closed(&self, _: u64) -> bool {
+        true
+    }
+
+    fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
+        Err(common::NxtError {
+            code: common::NxtErr::GENERAL,
+            detail: "unsupported".to_string(),
+        })
+    }
+
+    // On error EWOULDBLOCK/EAGAIN, write returns back the data that was unable to
+    // be written so that the caller can try again. All other "non-retriable" errors
+    // just returns None as the data with WriteError. Also the data that is returned on
+    // EWOULDBLOCK might be different from (less than) the data that was passed in because
+    // some of that data might have been transmitted
+    fn write(&mut self, _: u64, _: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
+        Err((
+            None,
+            common::NxtError {
+                code: common::NxtErr::GENERAL,
+                detail: "unsupported".to_string(),
+            },
+        ))
+    }
+}
