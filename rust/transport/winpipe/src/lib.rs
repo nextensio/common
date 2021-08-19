@@ -15,13 +15,8 @@ pub struct Pipe {
 }
 
 // This is a non-blocking pipe. Right now only server mode supported, its easy to add client mode too
-
+#[cfg(target_os = "windows")]
 impl Pipe {
-    #[cfg(not(target_os = "windows"))]
-    pub fn new_client(name: String, server: bool, pool: Arc<Pool<Vec<u8>>>) -> Option<Self> {
-        None
-    }
-    #[cfg(target_os = "windows")]
     pub fn new_client(name: String, server: bool, pool: Arc<Pool<Vec<u8>>>) -> Option<Self> {
         if let Ok(pipe) = NamedPipe::new(&name) {
             Some(Pipe {
@@ -183,6 +178,44 @@ impl common::Transport for Pipe {
             )?,
         }
         Ok(())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+impl common::Transport for Fd {
+    fn new_stream(&mut self) -> u64 {
+        0
+    }
+    fn close(&mut self, _: u64) -> Result<(), NxtError> {
+        Err(common::NxtError {
+            code: common::NxtErr::GENERAL,
+            detail: "unsupported".to_string(),
+        })
+    }
+    fn is_closed(&self, _: u64) -> bool {
+        true
+    }
+
+    fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
+        Err(common::NxtError {
+            code: common::NxtErr::GENERAL,
+            detail: "unsupported".to_string(),
+        })
+    }
+
+    // On error EWOULDBLOCK/EAGAIN, write returns back the data that was unable to
+    // be written so that the caller can try again. All other "non-retriable" errors
+    // just returns None as the data with WriteError. Also the data that is returned on
+    // EWOULDBLOCK might be different from (less than) the data that was passed in because
+    // some of that data might have been transmitted
+    fn write(&mut self, _: u64, _: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
+        Err((
+            None,
+            common::NxtError {
+                code: common::NxtErr::GENERAL,
+                detail: "unsupported".to_string(),
+            },
+        ))
     }
 }
 

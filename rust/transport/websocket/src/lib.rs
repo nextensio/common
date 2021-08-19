@@ -11,7 +11,8 @@ use mio::{Interest, Poll, Token};
 use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
 use object_pool::{Pool, Reusable};
 use prost::Message;
-use std::net::TcpStream;
+use socket2::{Domain, Socket, Type};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, u64};
 use std::{io::Cursor, io::Read, io::Write, sync::Arc};
@@ -35,7 +36,6 @@ pub struct WebSession {
     request_headers: HashMap<String, String>,
     pub tcp_stream: Option<RawStream>,
     close_pending: Vec<u64>,
-    nonblocking: bool,
     pkt_pool: Arc<Pool<Vec<u8>>>,
     tcp_pool: Arc<Pool<Vec<u8>>>,
     pending_tx_data: Option<NxtBufs>,
@@ -50,6 +50,7 @@ pub struct WebSession {
     line: usize,
     cr: bool,
     nl: bool,
+    bind_ip: u32,
 }
 
 struct WebStream {}
@@ -60,9 +61,9 @@ impl WebSession {
         server_name: &str,
         port: usize,
         request_headers: HashMap<String, String>,
-        nonblocking: bool,
         pkt_pool: Arc<Pool<Vec<u8>>>,
         tcp_pool: Arc<Pool<Vec<u8>>>,
+        bind_ip: u32,
     ) -> WebSession {
         let stream = WebStream {};
         let mut streams = HashMap::new();
@@ -79,7 +80,6 @@ impl WebSession {
             request_headers,
             tcp_stream: None,
             close_pending: Vec::new(),
-            nonblocking,
             pkt_pool,
             tcp_pool,
             pending_tx_data: None,
@@ -94,6 +94,7 @@ impl WebSession {
             line: 0,
             cr: false,
             nl: false,
+            bind_ip,
         }
     }
 
@@ -586,11 +587,24 @@ impl common::Transport for WebSession {
                 }
                 Ok(c) => c,
             };
-            let stream = TcpStream::connect(svr)?;
+            let bip = Ipv4Addr::new(
+                ((self.bind_ip >> 24) & 0xFF) as u8,
+                ((self.bind_ip >> 16) & 0xFF) as u8,
+                ((self.bind_ip >> 8) & 0xFF) as u8,
+                (self.bind_ip & 0xFF) as u8,
+            );
+            let bind_ip = SocketAddr::new(IpAddr::V4(bip), 0);
+            // We cant use mio TcpStream directly here like in NetConn because
+            // the rust native-tls handshake does not support async, and the
+            // websocket handshake we do below is also done as sync. So we create
+            // a sync socket and then move to async
+            let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
+            socket.bind(&bind_ip.into())?;
+            let addr: SocketAddr = svr.parse().unwrap();
+            socket.connect(&addr.into())?;
+            let stream = TcpStream::from(socket);
             self.socket = Some(connector.connect(&self.server_name, stream.try_clone()?)?);
-            if self.nonblocking {
-                stream.set_nonblocking(true)?;
-            }
+            stream.set_nonblocking(true)?;
             self.tcp_stream = Some(RawStream::Tcp(mio::net::TcpStream::from_std(stream)));
             self.dialed = true;
             return self.write_upgrade();
