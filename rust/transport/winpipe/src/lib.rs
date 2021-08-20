@@ -7,12 +7,16 @@ use mio::{Interest, Poll, Token};
 use object_pool::Pool;
 use std::io::{Read, Write};
 
+#[cfg(target_os = "windows")]
 pub struct Pipe {
     _server: bool,
     pipe: NamedPipe,
     closed: bool,
     pool: Arc<Pool<Vec<u8>>>,
 }
+
+#[cfg(not(target_os = "windows"))]
+pub struct Pipe {}
 
 // This is a non-blocking pipe. Right now only server mode supported, its easy to add client mode too
 #[cfg(target_os = "windows")]
@@ -182,7 +186,7 @@ impl common::Transport for Pipe {
 }
 
 #[cfg(not(target_os = "windows"))]
-impl common::Transport for Fd {
+impl common::Transport for Pipe {
     fn new_stream(&mut self) -> u64 {
         0
     }
