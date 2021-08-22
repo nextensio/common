@@ -12,6 +12,7 @@ use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
 use object_pool::{Pool, Reusable};
 use prost::Message;
 use socket2::{Domain, Socket, Type};
+use std::net::ToSocketAddrs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, u64};
@@ -599,8 +600,20 @@ impl common::Transport for WebSession {
             // websocket handshake we do below is also done as sync. So we create
             // a sync socket and then move to async
             let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
-            socket.bind(&bind_ip.into())?;
-            let addr: SocketAddr = svr.parse().unwrap();
+            if self.bind_ip != 0 {
+                socket.bind(&bind_ip.into())?;
+            }
+            let server: Vec<SocketAddr> = svr
+                .to_socket_addrs()
+                .expect("Unable to resolve domain")
+                .collect();
+            if server.len() == 0 {
+                return Err(NxtError {
+                    code: NxtErr::CONNECTION,
+                    detail: format!("{}", "unable to resolve dns for gateway".to_string()),
+                });
+            }
+            let addr: SocketAddr = server[0];
             socket.connect(&addr.into())?;
             let stream = TcpStream::from(socket);
             self.socket = Some(connector.connect(&self.server_name, stream.try_clone()?)?);
