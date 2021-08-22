@@ -599,7 +599,7 @@ impl common::Transport for WebSession {
             // the rust native-tls handshake does not support async, and the
             // websocket handshake we do below is also done as sync. So we create
             // a sync socket and then move to async
-            let socket = Socket::new(Domain::IPV6, Type::STREAM, None)?;
+            let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
             if self.bind_ip != 0 {
                 socket.bind(&bind_ip.into())?;
             }
