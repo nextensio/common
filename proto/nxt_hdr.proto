@@ -69,6 +69,19 @@ message NxtOnboard {
 // userCluster and userPod: This is also filled up only by clusters, agents and
 // connectors dont have to fill this in. This identifies the "source" cluster
 // and pod for the flow, to aid the return path in getting back to the source
+//
+// userid is same as onboard.userid to propagate the userid along the flow
+//
+// traceCtx is the Jaeger traceid (context) from the Uber-Trace-Id HTTP header.
+// traceRequestId is the user's trace request for executing the trace policy.
+// It is used to relate the trace spans to the user's trace request
+//
+// connectorPod is used to tell the Connector which cluster and cpod it is
+// connected to. The cpod will be a replica and is not the same as the pod id 
+// in connectID.
+// We can remove this if the cpod can pass this info to the Connector during
+// onboarding.
+
 message NxtFlow {
   string source = 1;
   string dest = 2;
@@ -88,6 +101,10 @@ message NxtFlow {
   bool responseData = 12;
   string userCluster = 13;
   string userPod = 14;
+  string userid = 15;
+  string traceCtx = 16;
+  string traceRequestId = 17;
+  string connectorPod = 18;
 }
 
 message NxtKeepalive {}
