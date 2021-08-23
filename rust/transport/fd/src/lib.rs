@@ -11,7 +11,7 @@ const AF_INET: u8 = 2;
 
 pub struct Fd {
     fd: i32,
-    //os platform: linux including android/desktops = 0, apple = 1
+    //os platform: linux including android/desktops = 0, apple = 1, windows == 2
     platform: usize,
     _mtu: usize,
     closed: bool,
