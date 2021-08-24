@@ -54,7 +54,7 @@ impl<'a, 'q> Device<'a> for PacketQ<'q> {
     type TxToken = TxToken<'a>;
 
     fn capabilities(&self) -> DeviceCapabilities {
-        DeviceCapabilities::new(self.medium, self.rx_mtu, self.tx_mtu)
+        DeviceCapabilities::new(self.medium, self.tx_mtu)
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
