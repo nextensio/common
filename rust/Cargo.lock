@@ -583,6 +583,7 @@ source = "git+https://github.com/gopakumarce/smoltcp.git?branch=nextensio-alpha#
 dependencies = [
  "bitflags",
  "byteorder",
+ "log",
  "managed 0.8.0",
  "object-pool",
 ]
