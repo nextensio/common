@@ -7,5 +7,5 @@ edition = "2018"
 [dependencies]
 object-pool = { git = "https://github.com/gopakumarce/object-pool.git", branch = "gopa-objpool" }
 managed = { version = "0.7" }
-smoltcp = { git = "https://github.com/gopakumarce/smoltcp.git", branch = "nextensio-alpha", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp", "log", "verbose"] }
+smoltcp = { git = "https://github.com/gopakumarce/smoltcp.git", branch = "nextensio-alpha", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }
 common = { path = "../../common" }
