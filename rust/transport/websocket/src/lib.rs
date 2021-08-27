@@ -606,10 +606,15 @@ impl common::Transport for WebSession {
         );
         let bind_ip = SocketAddr::new(IpAddr::V4(bip), 0);
         let svr = format!("{}:{}", self.server_name, self.port);
-        let server: Vec<SocketAddr> = svr
-            .to_socket_addrs()
-            .expect("Unable to resolve domain")
-            .collect();
+        let server: Vec<SocketAddr>;
+        if let Ok(sock_addr) = svr.to_socket_addrs() {
+            server = sock_addr.collect();
+        } else {
+            return Err(NxtError {
+                code: NxtErr::CONNECTION,
+                detail: format!("{}", "unable to resolve dns for gateway".to_string()),
+            });
+        }
         if server.len() == 0 {
             return Err(NxtError {
                 code: NxtErr::CONNECTION,
