@@ -607,19 +607,27 @@ impl common::Transport for WebSession {
         let bind_ip = SocketAddr::new(IpAddr::V4(bip), 0);
         let svr = format!("{}:{}", self.server_name, self.port);
         let server: Vec<SocketAddr>;
-        if let Ok(sock_addr) = svr.to_socket_addrs() {
-            server = sock_addr.collect();
-        } else {
-            return Err(NxtError {
-                code: NxtErr::CONNECTION,
-                detail: format!("{}", "unable to resolve dns for gateway".to_string()),
-            });
-        }
-        if server.len() == 0 {
-            return Err(NxtError {
-                code: NxtErr::CONNECTION,
-                detail: format!("{}", "unable to resolve dns for gateway".to_string()),
-            });
+        let resolve = svr.to_socket_addrs();
+        match resolve {
+            Ok(sock_addr) => {
+                server = sock_addr.collect();
+                if server.len() == 0 {
+                    return Err(NxtError {
+                        code: NxtErr::CONNECTION,
+                        detail: format!(
+                            "{}: {}",
+                            svr,
+                            "unable to resolve dns for gateway".to_string()
+                        ),
+                    });
+                }
+            }
+            Err(e) => {
+                return Err(NxtError {
+                    code: NxtErr::CONNECTION,
+                    detail: format!("{}: {}", svr, e),
+                })
+            }
         }
         let addr: SocketAddr = server[0];
         // We cant use mio TcpStream directly here like in NetConn because
