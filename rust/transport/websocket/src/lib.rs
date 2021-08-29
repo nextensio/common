@@ -609,19 +609,7 @@ impl common::Transport for WebSession {
         let server: Vec<SocketAddr>;
         let resolve = svr.to_socket_addrs();
         match resolve {
-            Ok(sock_addr) => {
-                server = sock_addr.collect();
-                if server.len() == 0 {
-                    return Err(NxtError {
-                        code: NxtErr::CONNECTION,
-                        detail: format!(
-                            "{}: {}",
-                            svr,
-                            "unable to resolve dns for gateway".to_string()
-                        ),
-                    });
-                }
-            }
+            Ok(sock_addr) => server = sock_addr.collect(),
             Err(e) => {
                 return Err(NxtError {
                     code: NxtErr::CONNECTION,
@@ -629,7 +617,28 @@ impl common::Transport for WebSession {
                 })
             }
         }
-        let addr: SocketAddr = server[0];
+        let mut index = -1;
+        for i in 0..server.len() {
+            match server[i] {
+                SocketAddr::V4(_) => {
+                    index = i as isize;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        if index == -1 {
+            return Err(NxtError {
+                code: NxtErr::CONNECTION,
+                detail: format!(
+                    "{}: {}",
+                    svr,
+                    "unable to resolve dns for gateway".to_string()
+                ),
+            });
+        }
+        let addr: SocketAddr = server[index as usize];
+
         // We cant use mio TcpStream directly here like in NetConn because
         // the rust native-tls handshake does not support async, so we create
         // a sync socket and then move to async
