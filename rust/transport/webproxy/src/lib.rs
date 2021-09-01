@@ -4,6 +4,7 @@ use common::{
 };
 use mio::{Interest, Poll, Token};
 use object_pool::{Pool, Reusable};
+#[cfg(not(target_os = "windows"))]
 use std::os::unix::io::AsRawFd;
 use std::sync::Arc;
 use std::{io::Read, io::Write};
@@ -43,6 +44,7 @@ impl common::Transport for WebProxy {
         if self.socket.is_none() {
             let addr: std::net::SocketAddr = format!("0.0.0.0:{}", self.key.sport).parse().unwrap();
             let listener = std::net::TcpListener::bind(addr)?;
+            #[cfg(not(target_os = "windows"))]
             unsafe {
                 let optval: libc::c_int = 1;
                 let ret = libc::setsockopt(

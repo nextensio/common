@@ -11,14 +11,41 @@ use mio::{Interest, Poll, Token};
 use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
 use object_pool::{Pool, Reusable};
 use prost::Message;
-use std::net::TcpStream;
+use socket2::{Domain, Socket, Type};
+use std::net::Shutdown;
+use std::net::ToSocketAddrs;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{collections::HashMap, u64};
 use std::{io::Cursor, io::Read, io::Write, sync::Arc};
 
 // The format of the data that gets packed in a websocket is as below
 // [length of nxt header][nxt header][payload]
+enum WSock {
+    Tls(TlsStream<TcpStream>),
+    Plain(TcpStream),
+}
 
+impl WSock {
+    pub fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            WSock::Tls(tls) => tls.read(buf),
+            WSock::Plain(tcp) => tcp.read(buf),
+        }
+    }
+    pub fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            WSock::Tls(tls) => tls.write(buf),
+            WSock::Plain(tcp) => tcp.write(buf),
+        }
+    }
+    pub fn shutdown(&mut self) -> std::io::Result<()> {
+        match self {
+            WSock::Tls(tls) => tls.shutdown(),
+            WSock::Plain(tcp) => tcp.shutdown(Shutdown::Both),
+        }
+    }
+}
 //TODO: A websocket can be read and written to from seperate threads. The two values
 //here which are not thread safe are the streams hashmap and the socket websocket
 //structure itself. So we will need to lock those and hence the rx and tx will block
@@ -31,11 +58,10 @@ pub struct WebSession {
     ca_cert: Vec<u8>,
     streams: HashMap<u64, WebStream>,
     server: bool,
-    socket: Option<TlsStream<TcpStream>>,
+    socket: Option<WSock>,
     request_headers: HashMap<String, String>,
     pub tcp_stream: Option<RawStream>,
     close_pending: Vec<u64>,
-    nonblocking: bool,
     pkt_pool: Arc<Pool<Vec<u8>>>,
     tcp_pool: Arc<Pool<Vec<u8>>>,
     pending_tx_data: Option<NxtBufs>,
@@ -50,6 +76,7 @@ pub struct WebSession {
     line: usize,
     cr: bool,
     nl: bool,
+    bind_ip: u32,
 }
 
 struct WebStream {}
@@ -60,9 +87,9 @@ impl WebSession {
         server_name: &str,
         port: usize,
         request_headers: HashMap<String, String>,
-        nonblocking: bool,
         pkt_pool: Arc<Pool<Vec<u8>>>,
         tcp_pool: Arc<Pool<Vec<u8>>>,
+        bind_ip: u32,
     ) -> WebSession {
         let stream = WebStream {};
         let mut streams = HashMap::new();
@@ -79,7 +106,6 @@ impl WebSession {
             request_headers,
             tcp_stream: None,
             close_pending: Vec::new(),
-            nonblocking,
             pkt_pool,
             tcp_pool,
             pending_tx_data: None,
@@ -94,6 +120,7 @@ impl WebSession {
             line: 0,
             cr: false,
             nl: false,
+            bind_ip,
         }
     }
 
@@ -362,7 +389,7 @@ fn has_varint(bytes: &[u8]) -> bool {
 }
 
 fn retry_previous_pending(
-    socket: &mut TlsStream<TcpStream>,
+    socket: &mut WSock,
     pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
     pending_tx_offset: &mut usize,
     pending_tx_data: &mut Option<NxtBufs>,
@@ -406,7 +433,7 @@ fn retry_previous_pending(
 }
 
 fn write_data(
-    socket: &mut TlsStream<TcpStream>,
+    socket: &mut WSock,
     mut data: NxtBufs,
     pending_tx_data: &mut Option<NxtBufs>,
 ) -> Result<(), NxtError> {
@@ -447,7 +474,7 @@ fn write_data(
 }
 
 fn write_header(
-    socket: &mut TlsStream<TcpStream>,
+    socket: &mut WSock,
     hdr: &mut NxtHdr,
     pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
     pending_tx_offset: &mut usize,
@@ -476,7 +503,7 @@ fn write_header(
     return retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data);
 }
 
-fn close_all_streams(socket: &mut TlsStream<TcpStream>, streams: &mut HashMap<u64, WebStream>) {
+fn close_all_streams(socket: &mut WSock, streams: &mut HashMap<u64, WebStream>) {
     socket.shutdown().ok();
     streams.clear();
 }
@@ -486,7 +513,7 @@ fn send_close(
     pending_tx_offset: &mut usize,
     pending_tx_data: &mut Option<NxtBufs>,
     close_pending: &mut Vec<u64>,
-    socket: &mut TlsStream<TcpStream>,
+    socket: &mut WSock,
     streams: &mut HashMap<u64, WebStream>,
     stream: u64,
     pkt_pool: &Arc<Pool<Vec<u8>>>,
@@ -571,26 +598,78 @@ fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
 
 impl common::Transport for WebSession {
     fn dial(&mut self) -> Result<(), NxtError> {
-        if !self.dialed {
-            let svr = format!("{}:{}", self.server_name, self.port);
-            let tls = match tls_with_cert(&self.ca_cert) {
-                Err(e) => return Err(e),
-                Ok(t) => t,
-            };
-            let connector = match tls.build() {
-                Err(e) => {
-                    return Err(NxtError {
-                        code: NxtErr::CONNECTION,
-                        detail: format!("{}", e),
-                    });
-                }
-                Ok(c) => c,
-            };
-            let stream = TcpStream::connect(svr)?;
-            self.socket = Some(connector.connect(&self.server_name, stream.try_clone()?)?);
-            if self.nonblocking {
-                stream.set_nonblocking(true)?;
+        let bip = Ipv4Addr::new(
+            ((self.bind_ip >> 24) & 0xFF) as u8,
+            ((self.bind_ip >> 16) & 0xFF) as u8,
+            ((self.bind_ip >> 8) & 0xFF) as u8,
+            (self.bind_ip & 0xFF) as u8,
+        );
+        let bind_ip = SocketAddr::new(IpAddr::V4(bip), 0);
+        let svr = format!("{}:{}", self.server_name, self.port);
+        let server: Vec<SocketAddr>;
+        let resolve = svr.to_socket_addrs();
+        match resolve {
+            Ok(sock_addr) => server = sock_addr.collect(),
+            Err(e) => {
+                return Err(NxtError {
+                    code: NxtErr::CONNECTION,
+                    detail: format!("{}: {}", svr, e),
+                })
             }
+        }
+        let mut index = -1;
+        for i in 0..server.len() {
+            match server[i] {
+                SocketAddr::V4(_) => {
+                    index = i as isize;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        if index == -1 {
+            return Err(NxtError {
+                code: NxtErr::CONNECTION,
+                detail: format!(
+                    "{}: {}",
+                    svr,
+                    "unable to resolve dns for gateway".to_string()
+                ),
+            });
+        }
+        let addr: SocketAddr = server[index as usize];
+
+        // We cant use mio TcpStream directly here like in NetConn because
+        // the rust native-tls handshake does not support async, so we create
+        // a sync socket and then move to async
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+        if self.bind_ip != 0 {
+            socket.bind(&bind_ip.into())?;
+        }
+        socket.connect(&addr.into())?;
+        let stream = TcpStream::from(socket);
+        if !self.dialed {
+            if self.ca_cert.len() != 0 {
+                let tls = match tls_with_cert(&self.ca_cert) {
+                    Err(e) => return Err(e),
+                    Ok(t) => t,
+                };
+                let connector = match tls.build() {
+                    Err(e) => {
+                        return Err(NxtError {
+                            code: NxtErr::CONNECTION,
+                            detail: format!("{}", e),
+                        });
+                    }
+                    Ok(c) => c,
+                };
+                self.socket = Some(WSock::Tls(
+                    connector.connect(&self.server_name, stream.try_clone()?)?,
+                ));
+            } else {
+                self.socket = Some(WSock::Plain(stream.try_clone()?));
+            }
+            stream.set_nonblocking(true)?;
             self.tcp_stream = Some(RawStream::Tcp(mio::net::TcpStream::from_std(stream)));
             self.dialed = true;
             return self.write_upgrade();

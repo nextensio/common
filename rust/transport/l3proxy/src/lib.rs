@@ -26,8 +26,7 @@ pub struct Socket<'a> {
     closed: bool,
     established: bool,
     ip_addrs: [IpCidr; 1],
-    _rx_mtu: usize,
-    tx_mtu: usize,
+    mtu: usize,
     handle: SocketHandle,
     proto: usize,
     endpoint: Option<IpEndpoint>,
@@ -40,8 +39,7 @@ pub struct Socket<'a> {
 impl<'a> Socket<'a> {
     pub fn new_client(
         tuple: &FlowV4Key,
-        rx_mtu: usize,
-        tx_mtu: usize,
+        mtu: usize,
         pkt_pool: Arc<Pool<Vec<u8>>>,
         tcp_pool: Arc<Pool<Vec<u8>>>,
     ) -> Option<Self> {
@@ -78,8 +76,7 @@ impl<'a> Socket<'a> {
             closed: false,
             established: false,
             ip_addrs: [IpCidr::new(dest, 32)],
-            _rx_mtu: rx_mtu,
-            tx_mtu,
+            mtu,
             handle,
             proto: tuple.proto,
             endpoint: None,
@@ -426,8 +423,7 @@ impl<'a> common::Transport for Socket<'a> {
 
         let pktq = PacketQ::new(
             Medium::Ip,
-            self._rx_mtu,
-            self.tx_mtu,
+            self.mtu,
             rx,
             tx,
             4, /* for apple platform specific headers, see fd/src/lib.rs */

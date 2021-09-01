@@ -16,8 +16,7 @@ pub struct PacketQ<'q> {
     pub rx: &'q mut VecDeque<(usize, Reusable<Vec<u8>>)>,
     pub tx: &'q mut VecDeque<(usize, Reusable<Vec<u8>>)>,
     medium: Medium,
-    rx_mtu: usize,
-    tx_mtu: usize,
+    mtu: usize,
     tx_headroom: usize,
     pool: Arc<Pool<Vec<u8>>>,
 }
@@ -30,8 +29,7 @@ impl<'q> PacketQ<'q> {
     #[allow(unused)]
     pub fn new(
         medium: Medium,
-        rx_mtu: usize,
-        tx_mtu: usize,
+        mtu: usize,
         rx: &'q mut VecDeque<(usize, Reusable<Vec<u8>>)>,
         tx: &'q mut VecDeque<(usize, Reusable<Vec<u8>>)>,
         tx_headroom: usize,
@@ -41,8 +39,7 @@ impl<'q> PacketQ<'q> {
             rx,
             tx,
             medium,
-            rx_mtu,
-            tx_mtu,
+            mtu,
             tx_headroom,
             pool,
         }
@@ -54,7 +51,7 @@ impl<'a, 'q> Device<'a> for PacketQ<'q> {
     type TxToken = TxToken<'a>;
 
     fn capabilities(&self) -> DeviceCapabilities {
-        DeviceCapabilities::new(self.medium, self.rx_mtu, self.tx_mtu)
+        DeviceCapabilities::new(self.medium, self.mtu)
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
