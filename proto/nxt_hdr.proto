@@ -105,6 +105,7 @@ message NxtFlow {
   string traceCtx = 16;
   string traceRequestId = 17;
   string connectorPod = 18;
+  string spanStartTime = 19;
 }
 
 message NxtKeepalive {}
