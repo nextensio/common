@@ -5,6 +5,6 @@ authors = ["Nextensio <team@nextensio.net>"]
 edition = "2018"
 
 [dependencies]
-object-pool = { git = "https://github.com/gopakumarce/object-pool.git", branch = "gopa-objpool" }
+object-pool = { git = "https://github.com/nextensio/object-pool.git", branch = "nextensio-alpha" }
 mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
 common = { path = "../../common" }

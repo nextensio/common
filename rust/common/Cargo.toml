@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 log = "0.4.14"
-object-pool = { git = "https://github.com/gopakumarce/object-pool.git", branch = "gopa-objpool" }
+object-pool = { git = "https://github.com/nextensio/object-pool.git", branch = "nextensio-alpha" }
 native-tls = "0.2"
 prost = "0.7"
 etherparse = "0.9.0"

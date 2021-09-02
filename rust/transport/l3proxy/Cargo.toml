@@ -5,7 +5,7 @@ authors = ["Nextensio <team@nextensio.net>"]
 edition = "2018"
 
 [dependencies]
-object-pool = { git = "https://github.com/gopakumarce/object-pool.git", branch = "gopa-objpool" }
-managed = { version = "0.7" }
-smoltcp = { git = "https://github.com/gopakumarce/smoltcp.git", branch = "nextensio-alpha", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }
+object-pool = { git = "https://github.com/nextensio/object-pool.git", branch = "nextensio-alpha" }
+managed = { git = "https://github.com/nextensio/rust-managed.git", branch = "nextensio-alpha" }
+smoltcp = { git = "https://github.com/nextensio/smoltcp.git", branch = "nextensio-alpha", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }
 common = { path = "../../common" }
