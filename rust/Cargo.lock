@@ -192,7 +192,7 @@ name = "l3proxy"
 version = "0.1.0"
 dependencies = [
  "common",
- "managed 0.7.2",
+ "managed",
  "object-pool",
  "smoltcp",
 ]
@@ -229,14 +229,8 @@ dependencies = [
 
 [[package]]
 name = "managed"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c75de51135344a4f8ed3cfe2720dc27736f7711989703a0b43aadf3753c55577"
-
-[[package]]
-name = "managed"
 version = "0.8.0"
-source = "git+https://github.com/gopakumarce/rust-managed.git?branch=gopa-managed#a7c020c583f78d976416f5e96bcc3a10f1c8302c"
+source = "git+https://github.com/nextensio/rust-managed.git?branch=nextensio-alpha#25de092e14076183cbf594c0b5107c8bffa655c0"
 dependencies = [
  "object-pool",
 ]
@@ -309,7 +303,7 @@ dependencies = [
 [[package]]
 name = "object-pool"
 version = "0.5.4"
-source = "git+https://github.com/gopakumarce/object-pool.git?branch=gopa-objpool#819f41fddd48b6e77928de469245431e6569c224"
+source = "git+https://github.com/nextensio/object-pool.git?branch=nextensio-alpha#819f41fddd48b6e77928de469245431e6569c224"
 dependencies = [
  "parking_lot",
 ]
@@ -579,11 +573,11 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 [[package]]
 name = "smoltcp"
 version = "0.8.0"
-source = "git+https://github.com/gopakumarce/smoltcp.git?branch=nextensio-alpha#043801a76ee1f06c6fdf96f892420e874132e89d"
+source = "git+https://github.com/nextensio/smoltcp.git?branch=nextensio-alpha#f746a92a7e0705a86f6f5bc588655bce599ebb29"
 dependencies = [
  "bitflags",
  "byteorder",
- "managed 0.8.0",
+ "managed",
  "object-pool",
 ]
 

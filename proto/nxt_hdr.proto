@@ -76,11 +76,6 @@ message NxtOnboard {
 // traceRequestId is the user's trace request for executing the trace policy.
 // It is used to relate the trace spans to the user's trace request
 //
-// connectorPod is used to tell the Connector which cluster and cpod it is
-// connected to. The cpod will be a replica and is not the same as the pod id 
-// in connectID.
-// We can remove this if the cpod can pass this info to the Connector during
-// onboarding.
 
 message NxtFlow {
   string source = 1;
@@ -104,8 +99,7 @@ message NxtFlow {
   string userid = 15;
   string traceCtx = 16;
   string traceRequestId = 17;
-  string connectorPod = 18;
-  string spanStartTime = 19;
+  string wireSpanStartTime = 18;
 }
 
 message NxtKeepalive {}

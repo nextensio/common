@@ -19,6 +19,6 @@ bytes = "1.0.1"
 log = "0.4.14"
 prost = "0.7"
 socket2 = "0.4.1"
-object-pool = { git = "https://github.com/gopakumarce/object-pool.git", branch = "gopa-objpool" }
+object-pool = { git = "https://github.com/nextensio/object-pool.git", branch = "nextensio-alpha" }
 mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
 common = { path = "../../common" }
