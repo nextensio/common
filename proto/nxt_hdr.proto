@@ -14,7 +14,8 @@ option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 // connectId: Usually the agent/connectors username converted to a value that is
 //            palatable to various kubernetes entities like istio http header
 //            matching rules. This value is constructed by the controller
-// hostname, model, os_xyz: device/operating system details
+// attributes: json string of device attributes such as hostname, model,
+//             os_xyz: device/operating system details
 message NxtOnboard {
   bool agent = 1;
   string userid = 2;
@@ -24,13 +25,7 @@ message NxtOnboard {
   string cluster = 6;
   string podname = 7;
   string connectId = 8;
-  string hostname = 9;
-  string model = 10;
-  string osType = 11;
-  string osName = 12;
-  uint32 osPatch = 13;
-  uint32 osMajor = 14;
-  uint32 osMinor = 15;
+  string attributes = 9;
 }
 
 // source, dest, sport, dport, proto: standard five tuple associated with any
