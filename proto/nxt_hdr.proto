@@ -10,7 +10,7 @@ option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 // usecs)
 message NxtTrace {
   string traceCtx = 1;
-  string wireSpanStartTime = 2;
+  uint64 wireSpanStartTime = 2;
   uint32 processingTime = 3;
 }
 
@@ -116,7 +116,7 @@ message NxtFlow {
   string userid = 15;
   string traceCtx = 16;
   string traceRequestId = 17;
-  string wireSpanStartTime = 18;
+  uint64 wireSpanStartTime = 18;
   uint32 processingTime = 19;
 }
 
