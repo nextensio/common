@@ -142,5 +142,6 @@ message NxtHdr {
     NxtOnboard onboard = 4;
     NxtFlow flow = 5;
     NxtKeepalive keepalive = 6;
+    NxtTrace trace = 7;
   }
 }
