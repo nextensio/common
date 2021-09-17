@@ -2,6 +2,18 @@ syntax = "proto3";
 package nxthdr;
 option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 
+// traceCtx is the Jaeger traceid (context) from the Uber-Trace-Id HTTP header.
+// wireSpanStartTime is the time this flow was put on the wire, the receiving
+// end will use it to calculate time spent on wire.
+// processingTime is the time that the agent spent processing the flow from
+// the first time it received it from the OS till it was sent to the cluster (in
+// usecs)
+message NxtTrace {
+  string traceCtx = 1;
+  string wireSpanStartTime = 2;
+  uint32 processingTime = 3;
+}
+
 // agent: true if its an agent, false for connector.
 // userid: username of the agent/connector
 // uuid: a unique identifier for the agent, if the same userid has multiple
@@ -78,7 +90,9 @@ message NxtOnboard {
 // traceRequestId is the user's trace request for executing the trace policy.
 // It is used to relate the trace spans to the user's trace request
 // wireSpanStartTime is the time this flow was put on the wire, the receiving
-// end will use it to calculate time spent on wire
+// end will use it to calculate time spent on wire. processingTime is the time
+// that the agent spent processing the flow from the first time it received it
+// from the OS till it was sent to the cluster (in usecs)
 
 message NxtFlow {
   string source = 1;
@@ -103,6 +117,7 @@ message NxtFlow {
   string traceCtx = 16;
   string traceRequestId = 17;
   string wireSpanStartTime = 18;
+  uint32 processingTime = 19;
 }
 
 message NxtKeepalive {}
