@@ -573,7 +573,7 @@ checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
 [[package]]
 name = "smoltcp"
 version = "0.8.0"
-source = "git+https://github.com/nextensio/smoltcp.git?branch=nextensio-alpha#f746a92a7e0705a86f6f5bc588655bce599ebb29"
+source = "git+https://github.com/nextensio/smoltcp.git?branch=nextensio-alpha#7db2e97172583a4e607f8ddd898050a119e21a12"
 dependencies = [
  "bitflags",
  "byteorder",
