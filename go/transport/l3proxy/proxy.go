@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gopakumarce/tlsx"
+	"github.com/nextensio/tlsx"
 	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"gvisor.dev/gvisor/pkg/tcpip"
