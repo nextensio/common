@@ -11,7 +11,7 @@ option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 message NxtTrace {
   string traceCtx = 1;
   uint64 wireSpanStartTime = 2;
-  uint32 processingTime = 3;
+  uint64 processingTime = 3;
 }
 
 // agent: true if its an agent, false for connector.
@@ -117,7 +117,7 @@ message NxtFlow {
   string traceCtx = 16;
   string traceRequestId = 17;
   uint64 wireSpanStartTime = 18;
-  uint32 processingTime = 19;
+  uint64 processingTime = 19;
 }
 
 message NxtKeepalive {}
