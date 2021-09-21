@@ -57,6 +57,7 @@ type webSession struct {
 	nthreads   int32
 	keepalive  int
 	keepcount  int
+	clocksync  int
 	closed     bool
 	keepRx     int
 	rttTot     uint64
@@ -283,9 +284,8 @@ func nxtWriteClockSync(stream *WebStream, serverTime uint64, clientTime uint64) 
 	hdr.Streamop = nxthdr.NxtHdr_CLOCK_SYNC
 	hdr.Datalen = 0
 	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
-	sync := hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync
-	sync.ServerTime = serverTime
-	sync.ClientTime = clientTime
+	sync := nxthdr.NxtClockSync{ServerTime: serverTime, ClientTime: clientTime}
+	hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync = &sync
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(&hdr)
 	if err != nil {
@@ -536,17 +536,19 @@ func keepCheck(lg *log.Logger, session *webSession) {
 // now we know that the client's clock "should have been" server start clock + oneway latency
 // because thats when client received the clock sync from servers pov. So now the
 // difference between both is the clock drift
-func handleClockSync(lg *log.Logger, stream *WebStream, data *nxtData) {
+func handleClockSync(stream *WebStream, data *nxtData) {
 	sync := data.hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync
 	if !stream.session.server {
 		// Ignoring write errors here, clock sync is done periodically
 		nxtWriteClockSync(stream, sync.ServerTime, uint64(time.Now().UnixNano()))
+		stream.lg.Println("Client sync")
 		return
 	}
 	start := time.Unix(0, int64(sync.ServerTime))
 	elapsed := time.Since(start).Nanoseconds()
 	// Well we cant have a negative rtt
 	if elapsed < 0 {
+		stream.lg.Println("bad elapsed", elapsed)
 		return
 	}
 	stream.session.rttTot += uint64(elapsed)
@@ -557,7 +559,7 @@ func handleClockSync(lg *log.Logger, stream *WebStream, data *nxtData) {
 	// Client to server should be just server clock sync send time + oneWay latency
 	expected := start.Add(time.Duration(oneWay * uint64(time.Nanosecond)))
 	drift := expected.Sub(client).Nanoseconds()
-	lg.Println("One way is", oneWay, " drift is ", drift)
+	stream.lg.Println("One way is", oneWay, " drift is ", drift)
 	// I dont know if we should average the drift or just keep absolute drift at the moment
 	stream.session.driftTot += drift
 	stream.session.driftCnt += 1
@@ -603,7 +605,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 		session.slock.Unlock()
 
 		if dtype == streamClockSync && stream != nil {
-			handleClockSync(lg, stream, data)
+			handleClockSync(stream, data)
 			continue
 		}
 
@@ -614,7 +616,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 			streamClosed := make(chan struct{})
 			stream = &WebStream{
 				ctx: ctx, rxData: rxData, txData: txData, sendClose: sendClose, streamClosed: streamClosed,
-				stream: sid, session: session, lg: lg, keepalive: 0, keepcount: 0,
+				stream: sid, session: session, lg: lg, keepalive: 0, keepcount: 0, clocksync: session.clocksync,
 			}
 			session.slock.Lock()
 			session.streams[sid] = stream
@@ -761,6 +763,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 			keepcount:  h.keepcount,
 			closed:     false,
 			keepRx:     0,
+			clocksync:  h.clocksync,
 		}
 		go sessionRead(h.ctx, h.lg, session, c)
 	}
@@ -902,7 +905,7 @@ func (h *WebStream) NewStream(hdr http.Header) common.Transport {
 	}
 	stream := WebStream{
 		rxData: rxData, txData: txData, sendClose: sendClose, streamClosed: streamClosed,
-		stream: sid, session: h.session, lg: h.lg, keepalive: 0, keepcount: 0,
+		stream: sid, session: h.session, lg: h.lg, keepalive: 0, keepcount: 0, clocksync: h.clocksync,
 	}
 	h.session.slock.Lock()
 	h.session.streams[sid] = &stream
@@ -950,5 +953,8 @@ func (h *WebStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError 
 
 // The is servers clock minus clients clock (in Nanoseconds)
 func (h *WebStream) ClockDrift() int64 {
-	return h.session.driftTot / int64(h.session.driftCnt)
+	if h.session.driftCnt != 0 {
+		return h.session.driftTot / int64(h.session.driftCnt)
+	}
+	return 0
 }

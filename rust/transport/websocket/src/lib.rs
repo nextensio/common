@@ -1,5 +1,5 @@
 use common::{
-    nxthdr::{nxt_hdr::StreamOp, NxtHdr},
+    nxthdr::{nxt_hdr::Hdr, nxt_hdr::StreamOp, NxtClockSync, NxtHdr},
     varint_decode, varint_encode, varint_encode_len, NxtBufs, NxtErr,
     NxtErr::CONNECTION,
     NxtErr::ENOMEM,
@@ -16,6 +16,7 @@ use std::net::Shutdown;
 use std::net::ToSocketAddrs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, u64};
 use std::{io::Cursor, io::Read, io::Write, sync::Arc};
 
@@ -566,6 +567,72 @@ fn send_close(
     }
 }
 
+fn send_clock_sync(
+    pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
+    pending_tx_offset: &mut usize,
+    pending_tx_data: &mut Option<NxtBufs>,
+    socket: &mut WSock,
+    streams: &mut HashMap<u64, WebStream>,
+    stream: u64,
+    pkt_pool: &Arc<Pool<Vec<u8>>>,
+    server_time: u64,
+) {
+    error!("SEND CLOCK SYNC");
+    let mut clock = NxtClockSync::default();
+    clock.server_time = server_time;
+    if let Ok(from_epoch) = SystemTime::now().duration_since(UNIX_EPOCH) {
+        clock.client_time = from_epoch.as_nanos() as u64;
+    } else {
+        return;
+    }
+    let mut hdr = NxtHdr::default();
+    hdr.hdr = Some(Hdr::Sync(clock));
+    hdr.streamid = stream;
+    hdr.streamop = StreamOp::ClockSync as i32;
+    hdr.datalen = 0;
+
+    // Already some header is waiting to be sent, so we just have to wait till thats sent,
+    // give it a retry now
+    match retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data) {
+        Ok(_) => {}
+        Err(e) => match e.code {
+            EWOULDBLOCK => {
+                // Clock sync will be periodically retried
+                return;
+            }
+            _ => {
+                close_all_streams(socket, streams);
+                return;
+            }
+        },
+    }
+
+    match write_header(
+        socket,
+        &mut hdr,
+        pending_tx_hdr,
+        pending_tx_offset,
+        pending_tx_data,
+        &pkt_pool,
+    ) {
+        Ok(_) => return,
+        Err(e) => match e.code {
+            EWOULDBLOCK => {
+                // The data has been put into pending_tx_hdr already
+                return;
+            }
+            ENOMEM => {
+                // The data could not get into pending_tx_hdr, Clock sync will be periodically retried
+                return;
+            }
+            _ => {
+                close_all_streams(socket, streams);
+                return;
+            }
+        },
+    }
+}
+
 #[cfg(not(target_vendor = "apple"))]
 fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
     let cert = match Certificate::from_pem(ca_cert) {
@@ -789,6 +856,28 @@ impl common::Transport for WebSession {
                     &self.pkt_pool.clone(),
                 );
                 self.streams.remove(&hdr.streamid);
+            }
+            return Ok((
+                hdr.streamid,
+                NxtBufs {
+                    hdr: Some(hdr),
+                    bufs: vec![],
+                    headroom: 0,
+                },
+            ));
+        } else if hdr.streamop == StreamOp::ClockSync as i32 {
+            match hdr.hdr.as_ref().unwrap() {
+                Hdr::Sync(clock) => send_clock_sync(
+                    &mut self.pending_tx_hdr,
+                    &mut self.pending_tx_offset,
+                    &mut self.pending_tx_data,
+                    socket,
+                    &mut self.streams,
+                    hdr.streamid,
+                    &self.pkt_pool.clone(),
+                    clock.server_time,
+                ),
+                _ => {}
             }
             return Ok((
                 hdr.streamid,
