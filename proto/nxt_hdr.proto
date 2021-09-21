@@ -2,6 +2,14 @@ syntax = "proto3";
 package nxthdr;
 option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 
+// The cluster sends a clock sync message to the agents with its time
+// (serverTime), agent responds to the mssage with the serverTime and its own
+// time clientTime - all timess in this file are in nanoseconds after unix epoch
+message NxtClockSync {
+  uint64 serverTime = 1;
+  uint64 clientTime = 2;
+}
+
 // traceCtx is the Jaeger traceid (context) from the Uber-Trace-Id HTTP header.
 // wireSpanStartTime is the time this flow was put on the wire, the receiving
 // end will use it to calculate time spent on wire.
@@ -136,6 +144,7 @@ message NxtHdr {
     CLOSE = 1;
     FLOW_CONTROL = 2;
     KEEP_ALIVE = 3;
+    CLOCK_SYNC = 4;
   }
   STREAM_OP streamop = 3;
   oneof hdr {
@@ -143,5 +152,6 @@ message NxtHdr {
     NxtFlow flow = 5;
     NxtKeepalive keepalive = 6;
     NxtTrace trace = 7;
+    NxtClockSync sync = 8;
   }
 }

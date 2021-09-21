@@ -68,7 +68,7 @@ func (x NxtFlow_FLOW_TYPE) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NxtFlow_FLOW_TYPE.Descriptor instead.
 func (NxtFlow_FLOW_TYPE) EnumDescriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{2, 0}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{3, 0}
 }
 
 type NxtHdr_STREAM_OP int32
@@ -78,6 +78,7 @@ const (
 	NxtHdr_CLOSE        NxtHdr_STREAM_OP = 1
 	NxtHdr_FLOW_CONTROL NxtHdr_STREAM_OP = 2
 	NxtHdr_KEEP_ALIVE   NxtHdr_STREAM_OP = 3
+	NxtHdr_CLOCK_SYNC   NxtHdr_STREAM_OP = 4
 )
 
 // Enum value maps for NxtHdr_STREAM_OP.
@@ -87,12 +88,14 @@ var (
 		1: "CLOSE",
 		2: "FLOW_CONTROL",
 		3: "KEEP_ALIVE",
+		4: "CLOCK_SYNC",
 	}
 	NxtHdr_STREAM_OP_value = map[string]int32{
 		"NOOP":         0,
 		"CLOSE":        1,
 		"FLOW_CONTROL": 2,
 		"KEEP_ALIVE":   3,
+		"CLOCK_SYNC":   4,
 	}
 )
 
@@ -120,7 +123,65 @@ func (x NxtHdr_STREAM_OP) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use NxtHdr_STREAM_OP.Descriptor instead.
 func (NxtHdr_STREAM_OP) EnumDescriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{4, 0}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{5, 0}
+}
+
+// The cluster sends a clock sync message to the agents with its time
+// (serverTime), agent responds to the mssage with the serverTime and its own
+// time clientTime - all timess in this file are in nanoseconds after unix epoch
+type NxtClockSync struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ServerTime uint64 `protobuf:"varint,1,opt,name=serverTime,proto3" json:"serverTime,omitempty"`
+	ClientTime uint64 `protobuf:"varint,2,opt,name=clientTime,proto3" json:"clientTime,omitempty"`
+}
+
+func (x *NxtClockSync) Reset() {
+	*x = NxtClockSync{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_nxt_hdr_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *NxtClockSync) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NxtClockSync) ProtoMessage() {}
+
+func (x *NxtClockSync) ProtoReflect() protoreflect.Message {
+	mi := &file_nxt_hdr_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NxtClockSync.ProtoReflect.Descriptor instead.
+func (*NxtClockSync) Descriptor() ([]byte, []int) {
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *NxtClockSync) GetServerTime() uint64 {
+	if x != nil {
+		return x.ServerTime
+	}
+	return 0
+}
+
+func (x *NxtClockSync) GetClientTime() uint64 {
+	if x != nil {
+		return x.ClientTime
+	}
+	return 0
 }
 
 // traceCtx is the Jaeger traceid (context) from the Uber-Trace-Id HTTP header.
@@ -142,7 +203,7 @@ type NxtTrace struct {
 func (x *NxtTrace) Reset() {
 	*x = NxtTrace{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_nxt_hdr_proto_msgTypes[0]
+		mi := &file_nxt_hdr_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -155,7 +216,7 @@ func (x *NxtTrace) String() string {
 func (*NxtTrace) ProtoMessage() {}
 
 func (x *NxtTrace) ProtoReflect() protoreflect.Message {
-	mi := &file_nxt_hdr_proto_msgTypes[0]
+	mi := &file_nxt_hdr_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -168,7 +229,7 @@ func (x *NxtTrace) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NxtTrace.ProtoReflect.Descriptor instead.
 func (*NxtTrace) Descriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{0}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *NxtTrace) GetTraceCtx() string {
@@ -232,7 +293,7 @@ type NxtOnboard struct {
 func (x *NxtOnboard) Reset() {
 	*x = NxtOnboard{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_nxt_hdr_proto_msgTypes[1]
+		mi := &file_nxt_hdr_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -245,7 +306,7 @@ func (x *NxtOnboard) String() string {
 func (*NxtOnboard) ProtoMessage() {}
 
 func (x *NxtOnboard) ProtoReflect() protoreflect.Message {
-	mi := &file_nxt_hdr_proto_msgTypes[1]
+	mi := &file_nxt_hdr_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -258,7 +319,7 @@ func (x *NxtOnboard) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NxtOnboard.ProtoReflect.Descriptor instead.
 func (*NxtOnboard) Descriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{1}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *NxtOnboard) GetAgent() bool {
@@ -360,7 +421,7 @@ type NxtFlow struct {
 func (x *NxtFlow) Reset() {
 	*x = NxtFlow{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_nxt_hdr_proto_msgTypes[2]
+		mi := &file_nxt_hdr_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -373,7 +434,7 @@ func (x *NxtFlow) String() string {
 func (*NxtFlow) ProtoMessage() {}
 
 func (x *NxtFlow) ProtoReflect() protoreflect.Message {
-	mi := &file_nxt_hdr_proto_msgTypes[2]
+	mi := &file_nxt_hdr_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +447,7 @@ func (x *NxtFlow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NxtFlow.ProtoReflect.Descriptor instead.
 func (*NxtFlow) Descriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{2}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *NxtFlow) GetSource() string {
@@ -531,7 +592,7 @@ type NxtKeepalive struct {
 func (x *NxtKeepalive) Reset() {
 	*x = NxtKeepalive{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_nxt_hdr_proto_msgTypes[3]
+		mi := &file_nxt_hdr_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -544,7 +605,7 @@ func (x *NxtKeepalive) String() string {
 func (*NxtKeepalive) ProtoMessage() {}
 
 func (x *NxtKeepalive) ProtoReflect() protoreflect.Message {
-	mi := &file_nxt_hdr_proto_msgTypes[3]
+	mi := &file_nxt_hdr_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -557,7 +618,7 @@ func (x *NxtKeepalive) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NxtKeepalive.ProtoReflect.Descriptor instead.
 func (*NxtKeepalive) Descriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{3}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{4}
 }
 
 // The streamid and streamop is used only in cases where nextensio itself
@@ -579,13 +640,14 @@ type NxtHdr struct {
 	//	*NxtHdr_Flow
 	//	*NxtHdr_Keepalive
 	//	*NxtHdr_Trace
+	//	*NxtHdr_Sync
 	Hdr isNxtHdr_Hdr `protobuf_oneof:"hdr"`
 }
 
 func (x *NxtHdr) Reset() {
 	*x = NxtHdr{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_nxt_hdr_proto_msgTypes[4]
+		mi := &file_nxt_hdr_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -598,7 +660,7 @@ func (x *NxtHdr) String() string {
 func (*NxtHdr) ProtoMessage() {}
 
 func (x *NxtHdr) ProtoReflect() protoreflect.Message {
-	mi := &file_nxt_hdr_proto_msgTypes[4]
+	mi := &file_nxt_hdr_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +673,7 @@ func (x *NxtHdr) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NxtHdr.ProtoReflect.Descriptor instead.
 func (*NxtHdr) Descriptor() ([]byte, []int) {
-	return file_nxt_hdr_proto_rawDescGZIP(), []int{4}
+	return file_nxt_hdr_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *NxtHdr) GetDatalen() uint32 {
@@ -670,6 +732,13 @@ func (x *NxtHdr) GetTrace() *NxtTrace {
 	return nil
 }
 
+func (x *NxtHdr) GetSync() *NxtClockSync {
+	if x, ok := x.GetHdr().(*NxtHdr_Sync); ok {
+		return x.Sync
+	}
+	return nil
+}
+
 type isNxtHdr_Hdr interface {
 	isNxtHdr_Hdr()
 }
@@ -690,6 +759,10 @@ type NxtHdr_Trace struct {
 	Trace *NxtTrace `protobuf:"bytes,7,opt,name=trace,proto3,oneof"`
 }
 
+type NxtHdr_Sync struct {
+	Sync *NxtClockSync `protobuf:"bytes,8,opt,name=sync,proto3,oneof"`
+}
+
 func (*NxtHdr_Onboard) isNxtHdr_Hdr() {}
 
 func (*NxtHdr_Flow) isNxtHdr_Hdr() {}
@@ -698,11 +771,18 @@ func (*NxtHdr_Keepalive) isNxtHdr_Hdr() {}
 
 func (*NxtHdr_Trace) isNxtHdr_Hdr() {}
 
+func (*NxtHdr_Sync) isNxtHdr_Hdr() {}
+
 var File_nxt_hdr_proto protoreflect.FileDescriptor
 
 var file_nxt_hdr_proto_rawDesc = []byte{
 	0x0a, 0x0d, 0x6e, 0x78, 0x74, 0x5f, 0x68, 0x64, 0x72, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12,
-	0x06, 0x6e, 0x78, 0x74, 0x68, 0x64, 0x72, 0x22, 0x7c, 0x0a, 0x08, 0x4e, 0x78, 0x74, 0x54, 0x72,
+	0x06, 0x6e, 0x78, 0x74, 0x68, 0x64, 0x72, 0x22, 0x4e, 0x0a, 0x0c, 0x4e, 0x78, 0x74, 0x43, 0x6c,
+	0x6f, 0x63, 0x6b, 0x53, 0x79, 0x6e, 0x63, 0x12, 0x1e, 0x0a, 0x0a, 0x73, 0x65, 0x72, 0x76, 0x65,
+	0x72, 0x54, 0x69, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0a, 0x73, 0x65, 0x72,
+	0x76, 0x65, 0x72, 0x54, 0x69, 0x6d, 0x65, 0x12, 0x1e, 0x0a, 0x0a, 0x63, 0x6c, 0x69, 0x65, 0x6e,
+	0x74, 0x54, 0x69, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0a, 0x63, 0x6c, 0x69,
+	0x65, 0x6e, 0x74, 0x54, 0x69, 0x6d, 0x65, 0x22, 0x7c, 0x0a, 0x08, 0x4e, 0x78, 0x74, 0x54, 0x72,
 	0x61, 0x63, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x74, 0x72, 0x61, 0x63, 0x65, 0x43, 0x74, 0x78, 0x18,
 	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x74, 0x72, 0x61, 0x63, 0x65, 0x43, 0x74, 0x78, 0x12,
 	0x2c, 0x0a, 0x11, 0x77, 0x69, 0x72, 0x65, 0x53, 0x70, 0x61, 0x6e, 0x53, 0x74, 0x61, 0x72, 0x74,
@@ -768,7 +848,7 @@ var file_nxt_hdr_proto_rawDesc = []byte{
 	0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x69, 0x6e, 0x67, 0x54, 0x69, 0x6d, 0x65, 0x22, 0x1b, 0x0a,
 	0x09, 0x46, 0x4c, 0x4f, 0x57, 0x5f, 0x54, 0x59, 0x50, 0x45, 0x12, 0x06, 0x0a, 0x02, 0x4c, 0x34,
 	0x10, 0x00, 0x12, 0x06, 0x0a, 0x02, 0x4c, 0x33, 0x10, 0x01, 0x22, 0x0e, 0x0a, 0x0c, 0x4e, 0x78,
-	0x74, 0x4b, 0x65, 0x65, 0x70, 0x61, 0x6c, 0x69, 0x76, 0x65, 0x22, 0xf6, 0x02, 0x0a, 0x06, 0x4e,
+	0x74, 0x4b, 0x65, 0x65, 0x70, 0x61, 0x6c, 0x69, 0x76, 0x65, 0x22, 0xb2, 0x03, 0x0a, 0x06, 0x4e,
 	0x78, 0x74, 0x48, 0x64, 0x72, 0x12, 0x18, 0x0a, 0x07, 0x64, 0x61, 0x74, 0x61, 0x6c, 0x65, 0x6e,
 	0x18, 0x01, 0x20, 0x01, 0x28, 0x0d, 0x52, 0x07, 0x64, 0x61, 0x74, 0x61, 0x6c, 0x65, 0x6e, 0x12,
 	0x1a, 0x0a, 0x08, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28,
@@ -787,15 +867,19 @@ var file_nxt_hdr_proto_rawDesc = []byte{
 	0x65, 0x48, 0x00, 0x52, 0x09, 0x6b, 0x65, 0x65, 0x70, 0x61, 0x6c, 0x69, 0x76, 0x65, 0x12, 0x28,
 	0x0a, 0x05, 0x74, 0x72, 0x61, 0x63, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e,
 	0x6e, 0x78, 0x74, 0x68, 0x64, 0x72, 0x2e, 0x4e, 0x78, 0x74, 0x54, 0x72, 0x61, 0x63, 0x65, 0x48,
-	0x00, 0x52, 0x05, 0x74, 0x72, 0x61, 0x63, 0x65, 0x22, 0x42, 0x0a, 0x09, 0x53, 0x54, 0x52, 0x45,
-	0x41, 0x4d, 0x5f, 0x4f, 0x50, 0x12, 0x08, 0x0a, 0x04, 0x4e, 0x4f, 0x4f, 0x50, 0x10, 0x00, 0x12,
-	0x09, 0x0a, 0x05, 0x43, 0x4c, 0x4f, 0x53, 0x45, 0x10, 0x01, 0x12, 0x10, 0x0a, 0x0c, 0x46, 0x4c,
-	0x4f, 0x57, 0x5f, 0x43, 0x4f, 0x4e, 0x54, 0x52, 0x4f, 0x4c, 0x10, 0x02, 0x12, 0x0e, 0x0a, 0x0a,
-	0x4b, 0x45, 0x45, 0x50, 0x5f, 0x41, 0x4c, 0x49, 0x56, 0x45, 0x10, 0x03, 0x42, 0x05, 0x0a, 0x03,
-	0x68, 0x64, 0x72, 0x42, 0x2d, 0x5a, 0x2b, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f,
-	0x6d, 0x2f, 0x6e, 0x65, 0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x2f, 0x63, 0x6f, 0x6d, 0x6d,
-	0x6f, 0x6e, 0x2f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x73, 0x2f, 0x6e, 0x78, 0x74, 0x68,
-	0x64, 0x72, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x00, 0x52, 0x05, 0x74, 0x72, 0x61, 0x63, 0x65, 0x12, 0x2a, 0x0a, 0x04, 0x73, 0x79, 0x6e, 0x63,
+	0x18, 0x08, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x6e, 0x78, 0x74, 0x68, 0x64, 0x72, 0x2e,
+	0x4e, 0x78, 0x74, 0x43, 0x6c, 0x6f, 0x63, 0x6b, 0x53, 0x79, 0x6e, 0x63, 0x48, 0x00, 0x52, 0x04,
+	0x73, 0x79, 0x6e, 0x63, 0x22, 0x52, 0x0a, 0x09, 0x53, 0x54, 0x52, 0x45, 0x41, 0x4d, 0x5f, 0x4f,
+	0x50, 0x12, 0x08, 0x0a, 0x04, 0x4e, 0x4f, 0x4f, 0x50, 0x10, 0x00, 0x12, 0x09, 0x0a, 0x05, 0x43,
+	0x4c, 0x4f, 0x53, 0x45, 0x10, 0x01, 0x12, 0x10, 0x0a, 0x0c, 0x46, 0x4c, 0x4f, 0x57, 0x5f, 0x43,
+	0x4f, 0x4e, 0x54, 0x52, 0x4f, 0x4c, 0x10, 0x02, 0x12, 0x0e, 0x0a, 0x0a, 0x4b, 0x45, 0x45, 0x50,
+	0x5f, 0x41, 0x4c, 0x49, 0x56, 0x45, 0x10, 0x03, 0x12, 0x0e, 0x0a, 0x0a, 0x43, 0x4c, 0x4f, 0x43,
+	0x4b, 0x5f, 0x53, 0x59, 0x4e, 0x43, 0x10, 0x04, 0x42, 0x05, 0x0a, 0x03, 0x68, 0x64, 0x72, 0x42,
+	0x2d, 0x5a, 0x2b, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6e, 0x65,
+	0x78, 0x74, 0x65, 0x6e, 0x73, 0x69, 0x6f, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f, 0x6d,
+	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x73, 0x2f, 0x6e, 0x78, 0x74, 0x68, 0x64, 0x72, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -811,28 +895,30 @@ func file_nxt_hdr_proto_rawDescGZIP() []byte {
 }
 
 var file_nxt_hdr_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_nxt_hdr_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_nxt_hdr_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_nxt_hdr_proto_goTypes = []interface{}{
 	(NxtFlow_FLOW_TYPE)(0), // 0: nxthdr.NxtFlow.FLOW_TYPE
 	(NxtHdr_STREAM_OP)(0),  // 1: nxthdr.NxtHdr.STREAM_OP
-	(*NxtTrace)(nil),       // 2: nxthdr.NxtTrace
-	(*NxtOnboard)(nil),     // 3: nxthdr.NxtOnboard
-	(*NxtFlow)(nil),        // 4: nxthdr.NxtFlow
-	(*NxtKeepalive)(nil),   // 5: nxthdr.NxtKeepalive
-	(*NxtHdr)(nil),         // 6: nxthdr.NxtHdr
+	(*NxtClockSync)(nil),   // 2: nxthdr.NxtClockSync
+	(*NxtTrace)(nil),       // 3: nxthdr.NxtTrace
+	(*NxtOnboard)(nil),     // 4: nxthdr.NxtOnboard
+	(*NxtFlow)(nil),        // 5: nxthdr.NxtFlow
+	(*NxtKeepalive)(nil),   // 6: nxthdr.NxtKeepalive
+	(*NxtHdr)(nil),         // 7: nxthdr.NxtHdr
 }
 var file_nxt_hdr_proto_depIdxs = []int32{
 	0, // 0: nxthdr.NxtFlow.type:type_name -> nxthdr.NxtFlow.FLOW_TYPE
 	1, // 1: nxthdr.NxtHdr.streamop:type_name -> nxthdr.NxtHdr.STREAM_OP
-	3, // 2: nxthdr.NxtHdr.onboard:type_name -> nxthdr.NxtOnboard
-	4, // 3: nxthdr.NxtHdr.flow:type_name -> nxthdr.NxtFlow
-	5, // 4: nxthdr.NxtHdr.keepalive:type_name -> nxthdr.NxtKeepalive
-	2, // 5: nxthdr.NxtHdr.trace:type_name -> nxthdr.NxtTrace
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	4, // 2: nxthdr.NxtHdr.onboard:type_name -> nxthdr.NxtOnboard
+	5, // 3: nxthdr.NxtHdr.flow:type_name -> nxthdr.NxtFlow
+	6, // 4: nxthdr.NxtHdr.keepalive:type_name -> nxthdr.NxtKeepalive
+	3, // 5: nxthdr.NxtHdr.trace:type_name -> nxthdr.NxtTrace
+	2, // 6: nxthdr.NxtHdr.sync:type_name -> nxthdr.NxtClockSync
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_nxt_hdr_proto_init() }
@@ -842,7 +928,7 @@ func file_nxt_hdr_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_nxt_hdr_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NxtTrace); i {
+			switch v := v.(*NxtClockSync); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -854,7 +940,7 @@ func file_nxt_hdr_proto_init() {
 			}
 		}
 		file_nxt_hdr_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NxtOnboard); i {
+			switch v := v.(*NxtTrace); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -866,7 +952,7 @@ func file_nxt_hdr_proto_init() {
 			}
 		}
 		file_nxt_hdr_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NxtFlow); i {
+			switch v := v.(*NxtOnboard); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -878,7 +964,7 @@ func file_nxt_hdr_proto_init() {
 			}
 		}
 		file_nxt_hdr_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*NxtKeepalive); i {
+			switch v := v.(*NxtFlow); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -890,6 +976,18 @@ func file_nxt_hdr_proto_init() {
 			}
 		}
 		file_nxt_hdr_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*NxtKeepalive); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_nxt_hdr_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*NxtHdr); i {
 			case 0:
 				return &v.state
@@ -902,11 +1000,12 @@ func file_nxt_hdr_proto_init() {
 			}
 		}
 	}
-	file_nxt_hdr_proto_msgTypes[4].OneofWrappers = []interface{}{
+	file_nxt_hdr_proto_msgTypes[5].OneofWrappers = []interface{}{
 		(*NxtHdr_Onboard)(nil),
 		(*NxtHdr_Flow)(nil),
 		(*NxtHdr_Keepalive)(nil),
 		(*NxtHdr_Trace)(nil),
+		(*NxtHdr_Sync)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -914,7 +1013,7 @@ func file_nxt_hdr_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_nxt_hdr_proto_rawDesc,
 			NumEnums:      2,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

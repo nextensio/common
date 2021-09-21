@@ -77,7 +77,7 @@ func readStream(ctx context.Context, parent uuid.UUID, tunnel common.Transport) 
 func websockServer(ctx context.Context, sChan chan common.NxtStream) {
 	pvtKey, pubKey := getKeys()
 	lg := log.New(os.Stdout, "test", 0)
-	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, 0, 0)
+	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, 0, 0, 0)
 	go server.Listen(sChan)
 	for {
 		select {
