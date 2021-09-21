@@ -541,14 +541,12 @@ func handleClockSync(stream *WebStream, data *nxtData) {
 	if !stream.session.server {
 		// Ignoring write errors here, clock sync is done periodically
 		nxtWriteClockSync(stream, sync.ServerTime, uint64(time.Now().UnixNano()))
-		stream.lg.Println("Client sync")
 		return
 	}
 	start := time.Unix(0, int64(sync.ServerTime))
 	elapsed := time.Since(start).Nanoseconds()
 	// Well we cant have a negative rtt
 	if elapsed < 0 {
-		stream.lg.Println("bad elapsed", elapsed)
 		return
 	}
 	stream.session.rttTot += uint64(elapsed)
@@ -559,7 +557,6 @@ func handleClockSync(stream *WebStream, data *nxtData) {
 	// Client to server should be just server clock sync send time + oneWay latency
 	expected := start.Add(time.Duration(oneWay * uint64(time.Nanosecond)))
 	drift := expected.Sub(client).Nanoseconds()
-	stream.lg.Println("One way is", oneWay, " drift is ", drift)
 	// I dont know if we should average the drift or just keep absolute drift at the moment
 	stream.session.driftTot += drift
 	stream.session.driftCnt += 1

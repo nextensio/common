@@ -577,7 +577,6 @@ fn send_clock_sync(
     pkt_pool: &Arc<Pool<Vec<u8>>>,
     server_time: u64,
 ) {
-    error!("SEND CLOCK SYNC");
     let mut clock = NxtClockSync::default();
     clock.server_time = server_time;
     if let Ok(from_epoch) = SystemTime::now().duration_since(UNIX_EPOCH) {
