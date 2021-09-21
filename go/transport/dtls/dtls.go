@@ -261,6 +261,6 @@ func listen(d *Dtls) *common.NxtError {
 	return nil
 }
 
-func (d *Dtls) ClockDrift() int64 {
-	return 0
+func (d *Dtls) Timing() common.TimeInfo {
+	return common.TimeInfo{}
 }

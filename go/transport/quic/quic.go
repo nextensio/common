@@ -299,6 +299,6 @@ func (q *Quic) SetReadDeadline(t time.Time) *common.NxtError {
 	return nil
 }
 
-func (q *Quic) ClockDrift() int64 {
-	return 0
+func (q *Quic) Timing() common.TimeInfo {
+	return common.TimeInfo{}
 }

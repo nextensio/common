@@ -286,6 +286,6 @@ func (e *Ethernet) SetReadDeadline(t time.Time) *common.NxtError {
 	return nil
 }
 
-func (e *Ethernet) ClockDrift() int64 {
-	return 0
+func (e *Ethernet) Timing() common.TimeInfo {
+	return common.TimeInfo{}
 }

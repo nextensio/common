@@ -37,6 +37,11 @@ const MAXVARINT_BUF = 4
 var MAXBUF = (2048 * 3)
 var LazyNoCopy = gopacket.DecodeOptions{Lazy: true, NoCopy: true}
 
+type TimeInfo struct {
+	Drift int64
+	Rtt   uint64
+}
+
 // The concept of a "parent" is mostly useful/used on the server side. On the server side,
 // the Listen/Accept will accept a "session" from an endpoint (agent/connector/pod), and then
 // that endpoint will create more streams over that session. But to keep things simple, we
@@ -152,5 +157,5 @@ type Transport interface {
 	// again, if they do, that will corrupt the data that gets sent
 	Write(*nxthdr.NxtHdr, net.Buffers) *NxtError
 
-	ClockDrift() int64
+	Timing() TimeInfo
 }

@@ -949,9 +949,14 @@ func (h *WebStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError 
 }
 
 // The is servers clock minus clients clock (in Nanoseconds)
-func (h *WebStream) ClockDrift() int64 {
+func (h *WebStream) Timing() common.TimeInfo {
+	var drift int64 = 0
+	var rtt uint64 = 0
 	if h.session.driftCnt != 0 {
-		return h.session.driftTot / int64(h.session.driftCnt)
+		drift = h.session.driftTot / int64(h.session.driftCnt)
 	}
-	return 0
+	if h.session.rttCnt != 0 {
+		rtt = h.session.rttTot / uint64(h.session.rttCnt)
+	}
+	return common.TimeInfo{Drift: drift, Rtt: rtt}
 }

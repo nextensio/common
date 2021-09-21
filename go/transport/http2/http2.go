@@ -611,6 +611,6 @@ func (h *HttpStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError
 	}
 }
 
-func (h *HttpStream) ClockDrift() int64 {
-	return 0
+func (h *HttpStream) Timing() common.TimeInfo {
+	return common.TimeInfo{}
 }

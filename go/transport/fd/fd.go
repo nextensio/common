@@ -128,6 +128,6 @@ func (f *Fd) SetReadDeadline(t time.Time) *common.NxtError {
 	return nil
 }
 
-func (f *Fd) ClockDrift() int64 {
-	return 0
+func (f *Fd) Timing() common.TimeInfo {
+	return common.TimeInfo{}
 }
