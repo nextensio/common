@@ -495,3 +495,7 @@ func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 func (p *Proxy) SetReadDeadline(t time.Time) *common.NxtError {
 	return nil
 }
+
+func (p *Proxy) ClockDrift() int64 {
+	return 0
+}

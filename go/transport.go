@@ -151,4 +151,6 @@ type Transport interface {
 	// NOTE2: The buffer given to write is "consumed" by write, ie the writer cannot use that buffer
 	// again, if they do, that will corrupt the data that gets sent
 	Write(*nxthdr.NxtHdr, net.Buffers) *NxtError
+
+	ClockDrift() int64
 }

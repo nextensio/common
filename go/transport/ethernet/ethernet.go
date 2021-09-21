@@ -14,7 +14,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/afpacket"
 	"github.com/google/gopacket/layers"
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
@@ -284,4 +284,8 @@ func (e *Ethernet) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 
 func (e *Ethernet) SetReadDeadline(t time.Time) *common.NxtError {
 	return nil
+}
+
+func (e *Ethernet) ClockDrift() int64 {
+	return 0
 }

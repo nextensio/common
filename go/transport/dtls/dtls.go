@@ -260,3 +260,7 @@ func listen(d *Dtls) *common.NxtError {
 
 	return nil
 }
+
+func (d *Dtls) ClockDrift() int64 {
+	return 0
+}

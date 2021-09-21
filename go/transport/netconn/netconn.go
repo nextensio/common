@@ -372,3 +372,7 @@ func (n *NetConn) SetReadDeadline(t time.Time) *common.NxtError {
 	}
 	return nil
 }
+
+func (n *NetConn) ClockDrift() int64 {
+	return 0
+}

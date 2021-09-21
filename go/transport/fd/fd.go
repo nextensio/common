@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"gitlab.com/nextensio/common/go"
+	common "gitlab.com/nextensio/common/go"
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 	"golang.org/x/net/ipv6"
 	"golang.org/x/sys/unix"
@@ -126,4 +126,8 @@ func (f *Fd) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 
 func (f *Fd) SetReadDeadline(t time.Time) *common.NxtError {
 	return nil
+}
+
+func (f *Fd) ClockDrift() int64 {
+	return 0
 }

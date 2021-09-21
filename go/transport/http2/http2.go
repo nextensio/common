@@ -610,3 +610,7 @@ func (h *HttpStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError
 		return common.Err(common.CONNECTION_ERR, nil)
 	}
 }
+
+func (h *HttpStream) ClockDrift() int64 {
+	return 0
+}

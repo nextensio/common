@@ -298,3 +298,7 @@ func (q *Quic) SetReadDeadline(t time.Time) *common.NxtError {
 
 	return nil
 }
+
+func (q *Quic) ClockDrift() int64 {
+	return 0
+}
