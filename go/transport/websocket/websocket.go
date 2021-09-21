@@ -536,7 +536,7 @@ func keepCheck(lg *log.Logger, session *webSession) {
 // now we know that the client's clock "should have been" server start clock + oneway latency
 // because thats when client received the clock sync from servers pov. So now the
 // difference between both is the clock drift
-func handleClockSync(stream *WebStream, data *nxtData) {
+func handleClockSync(lg *log.Logger, stream *WebStream, data *nxtData) {
 	sync := data.hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync
 	if !stream.session.server {
 		// Ignoring write errors here, clock sync is done periodically
@@ -544,7 +544,7 @@ func handleClockSync(stream *WebStream, data *nxtData) {
 		return
 	}
 	start := time.Unix(0, int64(sync.ServerTime))
-	elapsed := time.Since(start).Microseconds()
+	elapsed := time.Since(start).Nanoseconds()
 	// Well we cant have a negative rtt
 	if elapsed < 0 {
 		return
@@ -555,8 +555,9 @@ func handleClockSync(stream *WebStream, data *nxtData) {
 	oneWay := stream.session.rttTot / (2 * uint64(stream.session.rttCnt))
 	client := time.Unix(0, int64(sync.ClientTime))
 	// Client to server should be just server clock sync send time + oneWay latency
-	expected := start.Add(time.Duration(oneWay * uint64(time.Microsecond)))
-	drift := expected.Sub(client).Microseconds()
+	expected := start.Add(time.Duration(oneWay * uint64(time.Nanosecond)))
+	drift := expected.Sub(client).Nanoseconds()
+	lg.Println("One way is", oneWay, " drift is ", drift)
 	// I dont know if we should average the drift or just keep absolute drift at the moment
 	stream.session.driftTot += drift
 	stream.session.driftCnt += 1
@@ -602,7 +603,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 		session.slock.Unlock()
 
 		if dtype == streamClockSync && stream != nil {
-			handleClockSync(stream, data)
+			handleClockSync(lg, stream, data)
 			continue
 		}
 
@@ -947,7 +948,7 @@ func (h *WebStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError 
 	}
 }
 
-// The is servers clock minus clients clock (in microseconds)
+// The is servers clock minus clients clock (in Nanoseconds)
 func (h *WebStream) ClockDrift() int64 {
 	return h.session.driftTot / int64(h.session.driftCnt)
 }
