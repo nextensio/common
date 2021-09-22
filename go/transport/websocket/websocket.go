@@ -29,9 +29,8 @@ import (
 const (
 	streamData      = 0
 	streamClose     = 1
-	streamWindow    = 2
-	streamKeepAlive = 3
-	streamClockSync = 4
+	streamKeepAlive = 2
+	streamClockSync = 3
 )
 
 // Streams will not get/send data of the same size always, so assuming we get
@@ -230,14 +229,12 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 	}
 
 	dtype := streamData
-	// TODO: Flow control message type to be checked once its available
-	if data.hdr.Streamop == nxthdr.NxtHdr_CLOSE {
+	switch data.hdr.Hdr.(type) {
+	case *nxthdr.NxtHdr_Close:
 		dtype = streamClose
-	}
-	if data.hdr.Streamop == nxthdr.NxtHdr_KEEP_ALIVE {
+	case *nxthdr.NxtHdr_Keepalive:
 		dtype = streamKeepAlive
-	}
-	if data.hdr.Streamop == nxthdr.NxtHdr_CLOCK_SYNC {
+	case *nxthdr.NxtHdr_Sync:
 		dtype = streamClockSync
 	}
 
@@ -251,7 +248,6 @@ func nxtWriteKeepalive(stream *WebStream) *common.NxtError {
 	hdr := nxthdr.NxtHdr{}
 	// This is what identifies us as a stream to the other end
 	hdr.Streamid = stream.stream
-	hdr.Streamop = nxthdr.NxtHdr_KEEP_ALIVE
 	hdr.Datalen = 0
 	hdr.Hdr = &nxthdr.NxtHdr_Keepalive{}
 	// Encode nextensio header and the header length
@@ -281,7 +277,6 @@ func nxtWriteClockSync(stream *WebStream, serverTime uint64, clientTime uint64) 
 	hdr := nxthdr.NxtHdr{}
 	// This is what identifies us as a stream to the other end
 	hdr.Streamid = stream.stream
-	hdr.Streamop = nxthdr.NxtHdr_CLOCK_SYNC
 	hdr.Datalen = 0
 	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
 	sync := nxthdr.NxtClockSync{ServerTime: serverTime, ClientTime: clientTime}
@@ -318,7 +313,6 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 
 	// This is what identifies us as a stream to the other end
 	data.hdr.Streamid = stream.stream
-	data.hdr.Streamop = nxthdr.NxtHdr_NOOP
 	total := 0
 	for _, b := range data.data {
 		total += len(b)
@@ -360,7 +354,7 @@ func nxtWriteClose(stream *WebStream) *common.NxtError {
 	stream.session.wlock.Lock()
 	defer stream.session.wlock.Unlock()
 
-	hdr := nxthdr.NxtHdr{Streamid: stream.stream, Streamop: nxthdr.NxtHdr_CLOSE, Datalen: 0}
+	hdr := nxthdr.NxtHdr{Streamid: stream.stream, Hdr: &nxthdr.NxtHdr_Close{}, Datalen: 0}
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(&hdr)
 	if err != nil {
@@ -653,8 +647,6 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 				sessionClose(session)
 				return
 			}
-		case streamWindow:
-			//TODO: we got a window update, use this to control when the transmit side can send data
 		}
 	}
 }

@@ -1,5 +1,5 @@
 use common::{
-    nxthdr::{nxt_hdr::Hdr, nxt_hdr::StreamOp, NxtClockSync, NxtHdr},
+    nxthdr::{nxt_hdr::Hdr, NxtClockSync, NxtHdr, NxtKeepalive},
     varint_decode, varint_encode, varint_encode_len, NxtBufs, NxtErr,
     NxtErr::CONNECTION,
     NxtErr::ENOMEM,
@@ -521,7 +521,6 @@ fn send_close(
 ) -> usize {
     let mut hdr = NxtHdr::default();
     hdr.streamid = stream;
-    hdr.streamop = StreamOp::Close as i32;
     hdr.datalen = 0;
 
     // Already some header is waiting to be sent, so we just have to wait till thats sent,
@@ -587,7 +586,6 @@ fn send_clock_sync(
     let mut hdr = NxtHdr::default();
     hdr.hdr = Some(Hdr::Sync(clock));
     hdr.streamid = stream;
-    hdr.streamop = StreamOp::ClockSync as i32;
     hdr.datalen = 0;
 
     // Already some header is waiting to be sent, so we just have to wait till thats sent,
@@ -622,6 +620,66 @@ fn send_clock_sync(
             }
             ENOMEM => {
                 // The data could not get into pending_tx_hdr, Clock sync will be periodically retried
+                return;
+            }
+            _ => {
+                close_all_streams(socket, streams);
+                return;
+            }
+        },
+    }
+}
+
+fn send_keep_alive(
+    pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
+    pending_tx_offset: &mut usize,
+    pending_tx_data: &mut Option<NxtBufs>,
+    socket: &mut WSock,
+    streams: &mut HashMap<u64, WebStream>,
+    stream: u64,
+    pkt_pool: &Arc<Pool<Vec<u8>>>,
+) {
+    let keep = NxtKeepalive::default();
+    let mut hdr = NxtHdr::default();
+    hdr.hdr = Some(Hdr::Keepalive(keep));
+    hdr.streamid = stream;
+    hdr.datalen = 0;
+
+    // Already some header is waiting to be sent, so we just have to wait till thats sent,
+    // give it a retry now
+    match retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data) {
+        Ok(_) => {}
+        Err(e) => match e.code {
+            EWOULDBLOCK => {
+                // keep alive will be periodically retried
+                // TODO: This is not exactly great because this will be considered as a "lost keepalive"
+                // by the other end. We should have some means of retry, but that just complicates things.
+                // We will have to keep track that we need to send a keepalive next time etc..
+                return;
+            }
+            _ => {
+                close_all_streams(socket, streams);
+                return;
+            }
+        },
+    }
+
+    match write_header(
+        socket,
+        &mut hdr,
+        pending_tx_hdr,
+        pending_tx_offset,
+        pending_tx_data,
+        &pkt_pool,
+    ) {
+        Ok(_) => return,
+        Err(e) => match e.code {
+            EWOULDBLOCK => {
+                // The data has been put into pending_tx_hdr already
+                return;
+            }
+            ENOMEM => {
+                // The data could not get into pending_tx_hdr, Keepalive will be periodically retried
                 return;
             }
             _ => {
@@ -829,44 +887,28 @@ impl common::Transport for WebSession {
         let socket = self.socket.as_mut().unwrap();
         let hdr = self.pending_rx_hdr.take().unwrap();
         let buf = self.pending_rx_data.take().unwrap();
-        if hdr.streamop == StreamOp::Noop as i32 {
-            if !self.streams.contains_key(&hdr.streamid) {
-                let stream = WebStream {};
-                self.streams.insert(hdr.streamid, stream);
-            }
-            return Ok((
-                hdr.streamid,
-                NxtBufs {
-                    hdr: Some(hdr),
-                    bufs: vec![buf],
-                    headroom: 0,
-                },
-            ));
-        } else if hdr.streamop == StreamOp::Close as i32 {
-            if self.streams.contains_key(&hdr.streamid) {
-                send_close(
+        match hdr.hdr.as_ref().unwrap() {
+            Hdr::Keepalive(_) => {
+                send_keep_alive(
                     &mut self.pending_tx_hdr,
                     &mut self.pending_tx_offset,
                     &mut self.pending_tx_data,
-                    &mut self.close_pending,
                     socket,
                     &mut self.streams,
                     hdr.streamid,
                     &self.pkt_pool.clone(),
                 );
-                self.streams.remove(&hdr.streamid);
+                return Ok((
+                    hdr.streamid,
+                    NxtBufs {
+                        hdr: Some(hdr),
+                        bufs: vec![],
+                        headroom: 0,
+                    },
+                ));
             }
-            return Ok((
-                hdr.streamid,
-                NxtBufs {
-                    hdr: Some(hdr),
-                    bufs: vec![],
-                    headroom: 0,
-                },
-            ));
-        } else if hdr.streamop == StreamOp::ClockSync as i32 {
-            match hdr.hdr.as_ref().unwrap() {
-                Hdr::Sync(clock) => send_clock_sync(
+            Hdr::Sync(clock) => {
+                send_clock_sync(
                     &mut self.pending_tx_hdr,
                     &mut self.pending_tx_offset,
                     &mut self.pending_tx_data,
@@ -875,23 +917,55 @@ impl common::Transport for WebSession {
                     hdr.streamid,
                     &self.pkt_pool.clone(),
                     clock.server_time,
-                ),
-                _ => {}
+                );
+                return Ok((
+                    hdr.streamid,
+                    NxtBufs {
+                        hdr: Some(hdr),
+                        bufs: vec![],
+                        headroom: 0,
+                    },
+                ));
             }
-            return Ok((
-                hdr.streamid,
-                NxtBufs {
-                    hdr: Some(hdr),
-                    bufs: vec![],
-                    headroom: 0,
-                },
-            ));
-        } else {
-            error!("Unknown stream op {}", hdr.streamop);
-            return Err(NxtError {
-                code: NxtErr::EWOULDBLOCK,
-                detail: "unknown stream op".to_string(),
-            });
+            Hdr::Close(_) => {
+                if self.streams.contains_key(&hdr.streamid) {
+                    send_close(
+                        &mut self.pending_tx_hdr,
+                        &mut self.pending_tx_offset,
+                        &mut self.pending_tx_data,
+                        &mut self.close_pending,
+                        socket,
+                        &mut self.streams,
+                        hdr.streamid,
+                        &self.pkt_pool.clone(),
+                    );
+                    self.streams.remove(&hdr.streamid);
+                }
+                return Ok((
+                    hdr.streamid,
+                    NxtBufs {
+                        hdr: Some(hdr),
+                        bufs: vec![],
+                        headroom: 0,
+                    },
+                ));
+            }
+            _ => {
+                // Whatever is unknown just pass it onto the application, and the expectation
+                // is that the application will NOT barf on seeing an unknown type
+                if !self.streams.contains_key(&hdr.streamid) {
+                    let stream = WebStream {};
+                    self.streams.insert(hdr.streamid, stream);
+                }
+                return Ok((
+                    hdr.streamid,
+                    NxtBufs {
+                        hdr: Some(hdr),
+                        bufs: vec![buf],
+                        headroom: 0,
+                    },
+                ));
+            }
         }
     }
 
@@ -991,7 +1065,6 @@ impl common::Transport for WebSession {
                 o = 0;
             }
             hdr.streamid = stream;
-            hdr.streamop = StreamOp::Noop as i32;
             hdr.datalen = datalen as u32;
             match write_header(
                 socket,
