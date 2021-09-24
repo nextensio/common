@@ -18,16 +18,12 @@ message NxtClockSync {
 
 // traceCtx is the Jaeger traceid (context) from the Uber-Trace-Id HTTP header.
 //
-// wireSpanStartTime is the time this flow was put on the wire, the receiving
-// end will use it to calculate time spent on wire.
-//
-// processingTime is the time that the agent spent processing the flow from
+// processingDuration is the time that the agent spent processing the flow from
 // the first time it received it from the OS till it was sent to the cluster (in
-// usecs)
+// nsecs)
 message NxtTrace {
   string traceCtx = 1;
-  uint64 wireSpanStartTime = 2;
-  uint64 processingTime = 3;
+  uint32 processingDuration = 2;
 }
 
 // agent: true if its an agent, false for connector.
@@ -117,9 +113,9 @@ message NxtOnboard {
 // wireSpanStartTime is the time this flow was put on the wire, the receiving
 // end will use it to calculate time spent on wire.
 //
-// processingTime is the time that the agent spent processing the flow from the
-// first time it received it from the OS till it was sent to the cluster (in
-// usecs)
+// processingDuration is the time that the agent spent processing the flow from
+// the first time it received it from the OS till it was sent to the cluster (in
+// nsecs)
 
 message NxtFlow {
   string source = 1;
@@ -143,8 +139,7 @@ message NxtFlow {
   string userid = 15;
   string traceCtx = 16;
   string traceRequestId = 17;
-  uint64 wireSpanStartTime = 18;
-  uint64 processingTime = 19;
+  uint32 processingDuration = 18;
 }
 
 message NxtKeepalive {}
