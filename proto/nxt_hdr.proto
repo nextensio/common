@@ -110,9 +110,6 @@ message NxtOnboard {
 // traceRequestId is the user's trace request for executing the trace policy.
 // It is used to relate the trace spans to the user's trace request
 //
-// wireSpanStartTime is the time this flow was put on the wire, the receiving
-// end will use it to calculate time spent on wire.
-//
 // processingDuration is the time that the agent spent processing the flow from
 // the first time it received it from the OS till it was sent to the cluster (in
 // nsecs)
