@@ -50,9 +50,6 @@ message NxtTrace {
 //
 // attributes: json string of device attributes such as hostname, model,
 // os_xyz: device/operating system details
-//
-// jaegerCollector: whoever connects to this cluster has to advertise their
-// traces to this particular jaeger collector which is used by this cluster
 message NxtOnboard {
   bool agent = 1;
   string userid = 2;
