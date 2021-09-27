@@ -1,11 +1,14 @@
 package nhttp2
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/json"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -70,6 +73,7 @@ type HttpStream struct {
 	closed        bool
 	closeLock     sync.Mutex
 	server        bool
+	primary       bool
 	serverBody    io.ReadCloser
 	rxData        chan nxtData
 	txData        httpBody
@@ -80,23 +84,47 @@ type HttpStream struct {
 	cascade       common.Transport
 	client        *http.Client
 	addr          string
+	sid           uuid.UUID
+	rttTotal      *uint64
+	rttCnt        *int
+	clocksync     int
 }
+
+type Timing struct {
+	Uuid       uuid.UUID `json:"uuid"`
+	ServerTime uint64    `json:"servertime"`
+	ClientTime uint64    `json:"clienttime"`
+	RttTotal   uint64    `json:"rtttotal"`
+	RttCount   int       `json:"rttcnt"`
+}
+
+var sessionLock sync.RWMutex
+var sessions map[uuid.UUID]*HttpStream
 
 func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, totThreads *int32) *HttpStream {
 	return &HttpStream{
 		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		addr:       ":" + strconv.Itoa(port),
 		totThreads: totThreads,
+		server:     true,
 	}
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
-func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32) *HttpStream {
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, clocksync int) *HttpStream {
+	var rttTotal uint64
+	var rttCnt int
 	h := HttpStream{
 		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
 		streamClosed:  make(chan struct{}),
 		totThreads:    totThreads,
+		rttTotal:      &rttTotal,
+		rttCnt:        &rttCnt,
+		server:        false,
+		sid:           uuid.New(),
+		primary:       true,
+		clocksync:     clocksync,
 	}
 	h.txData = httpBody{h: &h, txChan: make(chan nxtData)}
 
@@ -262,9 +290,50 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Timing is sent periodically, so failure here is not fatal
+func recvTiming(w http.ResponseWriter, r *http.Request) {
+	var data Timing
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	sessionLock.Lock()
+	if sessions != nil {
+		s := sessions[data.Uuid]
+		if s != nil {
+			*s.rttTotal = data.RttTotal
+			*s.rttCnt = data.RttCount
+		}
+	}
+	sessionLock.Unlock()
+
+	data.ClientTime = uint64(time.Now().UnixNano())
+	js, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-type", "application/json")
+	w.Write(js)
+}
+
 func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, r *http.Request) {
 	if r.ProtoMajor != 2 {
 		panic("We are expecting http2 with prior knowledge")
+	}
+
+	if r.URL.Path == "/timing" {
+		recvTiming(w, r)
+		return
 	}
 
 	atomic.AddInt32(&h.nthreads, 1)
@@ -272,16 +341,34 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 		atomic.AddInt32(h.totThreads, 1)
 	}
 	rxData := make(chan nxtData)
+	var rttTotal uint64
+	var rttCnt int
 	stream := &HttpStream{
 		ctx: h.ctx, lg: h.lg, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
 		totThreads: h.totThreads,
+		rttTotal:   &rttTotal, rttCnt: &rttCnt,
 	}
 
-	// Golang http2 lib handles the "session" (ie "parent") inside the lib, we dont
-	// have control over it. When we ask to create an http2 session, it can reuse an
-	// existing session or open a new one, so we really cant predict the "parent" session
-	c <- common.NxtStream{Parent: uuid.UUID{}, Stream: stream, Http: &r.Header}
+	session := r.Header.Get("x-nextensio-transport-sid")
+	if s, e := uuid.Parse(session); e == nil {
+		stream.sid = s
+	} else {
+		h.lg.Println("Session without sid", e, s)
+		http.Error(w, "Session without sid", http.StatusInternalServerError)
+		return
+	}
+	primary := r.Header.Get("x-nextensio-transport-primary")
+	if primary == "true" {
+		sessionLock.Lock()
+		if sessions == nil {
+			sessions = make(map[uuid.UUID]*HttpStream)
+		}
+		sessions[stream.sid] = stream
+		sessionLock.Unlock()
+	}
+
+	c <- common.NxtStream{Parent: stream.sid, Stream: stream, Http: &r.Header}
 
 	atomic.AddInt32(&h.nthreads, 1)
 	if h.totThreads != nil {
@@ -297,6 +384,11 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 			atomic.AddInt32(&h.nthreads, -1)
 			if h.totThreads != nil {
 				atomic.AddInt32(h.totThreads, -1)
+			}
+			if primary == "true" {
+				sessionLock.Lock()
+				delete(sessions, stream.sid)
+				sessionLock.Unlock()
 			}
 			return
 		}
@@ -343,6 +435,69 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 	}
 }
 
+// NOTE: The timing sync is periodically attempted, so a failure here is
+// not fatal
+func (h *HttpStream) sendTiming() {
+	var data Timing
+
+	data.Uuid = h.sid
+	data.RttTotal = *h.rttTotal
+	data.RttCount = *h.rttCnt
+	data.ServerTime = uint64(time.Now().UnixNano())
+	js, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest("POST", h.addr+"/timing", bytes.NewReader(js))
+	if err != nil {
+		return
+	}
+	if h.requestHeader != nil {
+		for key, val := range h.requestHeader {
+			for _, v := range val {
+				req.Header.Add(key, v)
+			}
+		}
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return
+	}
+
+	start := time.Unix(0, int64(data.ServerTime))
+	elapsed := time.Since(start).Nanoseconds()
+	*h.rttTotal += uint64(elapsed)
+	*h.rttCnt += 1
+}
+
+func periodicTiming(h *HttpStream) {
+	atomic.AddInt32(&h.nthreads, 1)
+	if h.totThreads != nil {
+		atomic.AddInt32(h.totThreads, 1)
+	}
+	for {
+		if h.IsClosed() {
+			atomic.AddInt32(&h.nthreads, -1)
+			if h.totThreads != nil {
+				atomic.AddInt32(h.totThreads, -1)
+			}
+			return
+		}
+		h.sendTiming()
+		time.Sleep(time.Duration(h.clocksync) * time.Millisecond)
+	}
+}
+
 // NOTE: sChan is not used here because http2 lib we have cannot create streams
 // from server to client as of today. The sChan is only useful in notifying
 // client about new streams initiated from server
@@ -357,6 +512,10 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 				req.Header.Add(key, v)
 			}
 		}
+	}
+	req.Header.Add("x-nextensio-transport-sid", h.sid.String())
+	if h.primary {
+		req.Header.Add("x-nextensio-transport-primary", "true")
 	}
 
 	// The client.Do ends up launching two goroutines, one for reading
@@ -386,6 +545,10 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 			atomic.AddInt32(h.totThreads, -1)
 		}
 	}(h)
+
+	if h.primary && h.clocksync != 0 {
+		go periodicTiming(h)
+	}
 
 	h.sChan = sChan
 
@@ -553,11 +716,17 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 			}
 		}
 	}
+
 	nh := HttpStream{
 		ctx: h.ctx, lg: h.lg, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
 		requestHeader: hdr,
 		streamClosed:  make(chan struct{}),
 		totThreads:    h.totThreads,
+		rttTotal:      h.rttTotal,
+		rttCnt:        h.rttCnt,
+		sid:           h.sid,
+		server:        h.server,
+		primary:       false,
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
@@ -612,5 +781,25 @@ func (h *HttpStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError
 }
 
 func (h *HttpStream) Timing() common.TimeInfo {
-	return common.TimeInfo{}
+	var rtt uint64
+	var drift int64
+	if !h.server {
+		cnt := *h.rttCnt
+		if cnt != 0 {
+			rtt = *h.rttTotal / uint64(cnt)
+		}
+	} else {
+		sessionLock.Lock()
+		if sessions != nil {
+			s := sessions[h.sid]
+			if s != nil {
+				cnt := *s.rttCnt
+				if cnt != 0 {
+					rtt = *s.rttTotal / uint64(cnt)
+				}
+			}
+		}
+		sessionLock.Unlock()
+	}
+	return common.TimeInfo{Rtt: rtt, Drift: drift}
 }

@@ -94,7 +94,7 @@ func http2sockServer(ctx context.Context, encrypted bool, sChan chan common.NxtS
 }
 
 // Create a http2socket session to the gateway
-func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serverIP string, port int, cChan chan common.NxtStream) common.Transport {
+func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serverIP string, port int, cChan chan common.NxtStream, clocksync int) common.Transport {
 	var cert []byte
 	if encrypted {
 		var err error
@@ -103,12 +103,10 @@ func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serve
 			log.Fatal(err)
 		}
 	}
-	myUuid := uuid.New().String()
 	retry := 0
 	hdrs := make(http.Header)
-	hdrs.Add("x-nextensio-uuid", myUuid)
 	lg := log.New(os.Stdout, "test", 0)
-	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs, nil)
+	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs, nil, clocksync)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++
@@ -234,7 +232,7 @@ func Test1PktsPlainText(t *testing.T) {
 	sChan := make(chan common.NxtStream)
 	go http2sockServer(mainCtx, false, sChan)
 	time.Sleep(time.Second)
-	hsock := dialHttp2sock(mainCtx, false, "gateway.nextensio.net", "127.0.0.1", testPort, cChan)
+	hsock := dialHttp2sock(mainCtx, false, "gateway.nextensio.net", "127.0.0.1", testPort, cChan, 10)
 	if hsock == nil {
 		fmt.Println("Could not create http2socket")
 		return
@@ -259,7 +257,7 @@ func Test2Pkts(t *testing.T) {
 	sChan := make(chan common.NxtStream)
 	go http2sockServer(mainCtx, true, sChan)
 	time.Sleep(time.Second)
-	hsock := dialHttp2sock(mainCtx, true, "gateway.nextensio.net", "127.0.0.1", testPort, cChan)
+	hsock := dialHttp2sock(mainCtx, true, "gateway.nextensio.net", "127.0.0.1", testPort, cChan, 10)
 	if hsock == nil {
 		fmt.Println("Could not create http2socket")
 		return
@@ -294,7 +292,7 @@ func Test3ClientStreams(t *testing.T) {
 	sChan := make(chan common.NxtStream)
 	go http2sockServer(mainCtx, true, sChan)
 	time.Sleep(time.Second)
-	hsock := dialHttp2sock(mainCtx, true, "gateway.nextensio.net", "127.0.0.1", testPort, cChan)
+	hsock := dialHttp2sock(mainCtx, true, "gateway.nextensio.net", "127.0.0.1", testPort, cChan, 0)
 	if hsock == nil {
 		fmt.Println("Could not create http2socket")
 		return
@@ -368,7 +366,7 @@ func Test4ClientStreamsServerClose(t *testing.T) {
 	sChan := make(chan common.NxtStream)
 	go http2sockServer(mainCtx, true, sChan)
 	time.Sleep(time.Second)
-	hsock := dialHttp2sock(mainCtx, true, "gateway.nextensio.net", "127.0.0.1", testPort, cChan)
+	hsock := dialHttp2sock(mainCtx, true, "gateway.nextensio.net", "127.0.0.1", testPort, cChan, 0)
 	if hsock == nil {
 		fmt.Println("Could not create http2socket")
 		return
@@ -420,4 +418,60 @@ func Test4ClientStreamsServerClose(t *testing.T) {
 	}
 	fmt.Print("Waiting for all goroutines to go away\n")
 	wg.Wait()
+}
+
+func Test5ClockSync(t *testing.T) {
+	mainCtx := context.Background()
+	cChan := make(chan common.NxtStream)
+	sChan := make(chan common.NxtStream)
+	go http2sockServer(mainCtx, false, sChan)
+	time.Sleep(time.Second)
+	hsock := dialHttp2sock(mainCtx, false, "gateway.nextensio.net", "127.0.0.1", testPort, cChan, 10)
+	if hsock == nil {
+		fmt.Println("Could not create http2socket")
+		return
+	}
+
+	for len(serverStream) == 0 {
+		time.Sleep(time.Second)
+	}
+	s := serverStream[0].(*HttpStream)
+	c := hsock.(*HttpStream)
+	// Give some time for RTT to accumulate
+	time.Sleep(time.Second)
+
+	if c.nthreads != 3 {
+		fmt.Println("Total threads not expected", c.nthreads)
+		panic(0)
+	}
+
+	sessionLock.Lock()
+	if len(sessions) != 1 {
+		t.Error("Sessions not populated", sessions)
+		panic(0)
+	}
+	sessionLock.Unlock()
+
+	// 10 ms interval means we should have 100 rtts, ie at least 80
+	if *s.rttCnt < 80 || *c.rttCnt < 80 {
+		t.Error("Bad rtt counts", s.rttCnt, c.rttCnt)
+		panic(0)
+	}
+	fmt.Println("Client rtt: ", c.Timing().Rtt, " Server rtt: ", s.Timing().Rtt)
+
+	hsock.Close()
+	time.Sleep(time.Second)
+	sessionLock.Lock()
+	if len(sessions) != 0 {
+		t.Error("Sessions not empty", sessions)
+		panic(0)
+	}
+	sessionLock.Unlock()
+
+	fmt.Println("Waiting for all goroutines to go away")
+	wg.Wait()
+	for c.nthreads != 0 {
+		fmt.Println("Waiting for all threads to go away")
+		time.Sleep(100 * time.Millisecond)
+	}
 }
