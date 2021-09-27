@@ -23,7 +23,7 @@ message NxtClockSync {
 // nsecs)
 message NxtTrace {
   string traceCtx = 1;
-  uint32 processingDuration = 2;
+  uint64 processingDuration = 2;
 }
 
 // agent: true if its an agent, false for connector.
@@ -132,7 +132,7 @@ message NxtFlow {
   string userid = 15;
   string traceCtx = 16;
   string traceRequestId = 17;
-  uint32 processingDuration = 18;
+  uint64 processingDuration = 18;
 }
 
 message NxtKeepalive {}
