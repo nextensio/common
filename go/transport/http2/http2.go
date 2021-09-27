@@ -358,7 +358,7 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	if primary == "true" {
 		sessions[stream.sid] = stream
 	} else {
-		h.parent = sessions[stream.sid]
+		stream.parent = sessions[stream.sid]
 	}
 	sessionLock.Unlock()
 
