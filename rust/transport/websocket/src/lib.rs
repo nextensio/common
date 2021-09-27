@@ -6,7 +6,6 @@ use common::{
     NxtErr::EWOULDBLOCK,
     NxtError, RawStream, RegType, MAXVARINT_BUF,
 };
-use log::error;
 use mio::{Interest, Poll, Token};
 use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
 use object_pool::{Pool, Reusable};
@@ -16,7 +15,6 @@ use std::net::Shutdown;
 use std::net::ToSocketAddrs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, u64};
 use std::{io::Cursor, io::Read, io::Write, sync::Arc};
 
@@ -578,11 +576,6 @@ fn send_clock_sync(
 ) {
     let mut clock = NxtClockSync::default();
     clock.server_time = server_time;
-    if let Ok(from_epoch) = SystemTime::now().duration_since(UNIX_EPOCH) {
-        clock.client_time = from_epoch.as_nanos() as u64;
-    } else {
-        return;
-    }
     let mut hdr = NxtHdr::default();
     hdr.hdr = Some(Hdr::Sync(clock));
     hdr.streamid = stream;

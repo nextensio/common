@@ -59,10 +59,10 @@ type webSession struct {
 	clocksync  int
 	closed     bool
 	keepRx     int
-	rttTot     uint64
-	rttCnt     int
-	driftTot   int64
-	driftCnt   int
+	rtts       []uint64
+	rttTotal   uint64
+	rtt        uint64
+	initTime   time.Time
 }
 
 type nxtData struct {
@@ -270,7 +270,7 @@ func nxtWriteKeepalive(stream *WebStream) *common.NxtError {
 	return nil
 }
 
-func nxtWriteClockSync(stream *WebStream, serverTime uint64, clientTime uint64) *common.NxtError {
+func nxtWriteClockSync(stream *WebStream, serverTime uint64) *common.NxtError {
 	stream.session.wlock.Lock()
 	defer stream.session.wlock.Unlock()
 
@@ -279,7 +279,7 @@ func nxtWriteClockSync(stream *WebStream, serverTime uint64, clientTime uint64) 
 	hdr.Streamid = stream.stream
 	hdr.Datalen = 0
 	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
-	sync := nxthdr.NxtClockSync{ServerTime: serverTime, ClientTime: clientTime}
+	sync := nxthdr.NxtClockSync{ServerTime: serverTime}
 	hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync = &sync
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(&hdr)
@@ -523,37 +523,22 @@ func keepCheck(lg *log.Logger, session *webSession) {
 	}
 }
 
-// So the mechanism is simple (for now) - christians algo. Server records its
-// time and sends to client, client loops it back adding clients own time. Using
-// different in server time now and server time recorded, we know the "round trip"
-// rtt - and half of rtt is one way latency (not always, but most of the time). So
-// now we know that the client's clock "should have been" server start clock + oneway latency
-// because thats when client received the clock sync from servers pov. So now the
-// difference between both is the clock drift
 func handleClockSync(stream *WebStream, data *nxtData) {
 	sync := data.hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync
 	if !stream.session.server {
 		// Ignoring write errors here, clock sync is done periodically
-		nxtWriteClockSync(stream, sync.ServerTime, uint64(time.Now().UnixNano()))
+		nxtWriteClockSync(stream, sync.ServerTime)
 		return
 	}
-	start := time.Unix(0, int64(sync.ServerTime))
-	elapsed := time.Since(start).Nanoseconds()
-	// Well we cant have a negative rtt
-	if elapsed < 0 {
-		return
+	elapsed := uint64(time.Now().Sub(stream.session.initTime).Nanoseconds()) - sync.ServerTime
+	stream.session.rtts = append(stream.session.rtts, elapsed)
+	stream.session.rttTotal += elapsed
+	// sliding window
+	if len(stream.session.rtts) > 100 {
+		stream.session.rttTotal -= stream.session.rtts[0]
+		stream.session.rtts = stream.session.rtts[1:]
 	}
-	stream.session.rttTot += uint64(elapsed)
-	stream.session.rttCnt += 1
-	// Average and take half of rtt to get one way latency
-	oneWay := stream.session.rttTot / (2 * uint64(stream.session.rttCnt))
-	client := time.Unix(0, int64(sync.ClientTime))
-	// Client to server should be just server clock sync send time + oneWay latency
-	expected := start.Add(time.Duration(oneWay * uint64(time.Nanosecond)))
-	drift := expected.Sub(client).Nanoseconds()
-	// I dont know if we should average the drift or just keep absolute drift at the moment
-	stream.session.driftTot += drift
-	stream.session.driftCnt += 1
+	stream.session.rtt = stream.session.rttTotal / uint64(len(stream.session.rtts))
 }
 
 func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c chan common.NxtStream) {
@@ -672,7 +657,7 @@ func streamWrite(h *WebStream) {
 				err = true
 			}
 		case <-time.After(clocksync):
-			if nxtWriteClockSync(h, uint64(time.Now().UnixNano()), 0) != nil {
+			if nxtWriteClockSync(h, uint64(time.Now().Sub(h.session.initTime).Nanoseconds())) != nil {
 				err = true
 			}
 		case err = <-h.sendClose:
@@ -753,6 +738,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 			closed:     false,
 			keepRx:     0,
 			clocksync:  h.clocksync,
+			initTime:   time.Now(),
 		}
 		go sessionRead(h.ctx, h.lg, session, c)
 	}
@@ -942,13 +928,5 @@ func (h *WebStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError 
 
 // The is servers clock minus clients clock (in Nanoseconds)
 func (h *WebStream) Timing() common.TimeInfo {
-	var drift int64 = 0
-	var rtt uint64 = 0
-	if h.session.driftCnt != 0 {
-		drift = h.session.driftTot / int64(h.session.driftCnt)
-	}
-	if h.session.rttCnt != 0 {
-		rtt = h.session.rttTot / uint64(h.session.rttCnt)
-	}
-	return common.TimeInfo{Drift: drift, Rtt: rtt}
+	return common.TimeInfo{Rtt: h.session.rtt}
 }

@@ -38,8 +38,7 @@ var MAXBUF = (2048 * 3)
 var LazyNoCopy = gopacket.DecodeOptions{Lazy: true, NoCopy: true}
 
 type TimeInfo struct {
-	Drift int64
-	Rtt   uint64
+	Rtt uint64
 }
 
 // The concept of a "parent" is mostly useful/used on the server side. On the server side,

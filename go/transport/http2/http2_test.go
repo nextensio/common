@@ -453,11 +453,11 @@ func Test5ClockSync(t *testing.T) {
 	sessionLock.Unlock()
 
 	// 10 ms interval means we should have 100 rtts, ie at least 80
-	if *s.rttCnt < 80 || *c.rttCnt < 80 {
-		t.Error("Bad rtt counts", s.rttCnt, c.rttCnt)
+	if len(c.rtts) < 80 || c.rtt == 0 {
+		t.Error("Bad rtt counts", len(c.rtts), s.rtt)
 		panic(0)
 	}
-	fmt.Println("Client rtt: ", c.Timing().Rtt, " Server rtt: ", s.Timing().Rtt)
+	fmt.Println("Client rtt: ", c.Timing().Rtt, " Server rtt: ", s.Timing().Rtt, " Count: ", len(c.rtts))
 
 	hsock.Close()
 	time.Sleep(time.Second)

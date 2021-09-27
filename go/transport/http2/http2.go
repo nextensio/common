@@ -73,7 +73,6 @@ type HttpStream struct {
 	closed        bool
 	closeLock     sync.Mutex
 	server        bool
-	primary       bool
 	serverBody    io.ReadCloser
 	rxData        chan nxtData
 	txData        httpBody
@@ -85,17 +84,18 @@ type HttpStream struct {
 	client        *http.Client
 	addr          string
 	sid           uuid.UUID
-	rttTotal      *uint64
-	rttCnt        *int
+	rtts          []uint64
+	rtt           uint64
+	rttTotal      uint64
 	clocksync     int
+	initTime      time.Time
+	parent        *HttpStream
 }
 
 type Timing struct {
 	Uuid       uuid.UUID `json:"uuid"`
 	ServerTime uint64    `json:"servertime"`
-	ClientTime uint64    `json:"clienttime"`
-	RttTotal   uint64    `json:"rtttotal"`
-	RttCount   int       `json:"rttcnt"`
+	Rtt        uint64    `json:"rtt"`
 }
 
 var sessionLock sync.RWMutex
@@ -112,19 +112,15 @@ func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []by
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
 func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, clocksync int) *HttpStream {
-	var rttTotal uint64
-	var rttCnt int
 	h := HttpStream{
 		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
 		streamClosed:  make(chan struct{}),
 		totThreads:    totThreads,
-		rttTotal:      &rttTotal,
-		rttCnt:        &rttCnt,
 		server:        false,
 		sid:           uuid.New(),
-		primary:       true,
 		clocksync:     clocksync,
+		initTime:      time.Now(),
 	}
 	h.txData = httpBody{h: &h, txChan: make(chan nxtData)}
 
@@ -310,13 +306,11 @@ func recvTiming(w http.ResponseWriter, r *http.Request) {
 	if sessions != nil {
 		s := sessions[data.Uuid]
 		if s != nil {
-			*s.rttTotal = data.RttTotal
-			*s.rttCnt = data.RttCount
+			s.rtt = data.Rtt
 		}
 	}
 	sessionLock.Unlock()
 
-	data.ClientTime = uint64(time.Now().UnixNano())
 	js, err := json.Marshal(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -341,13 +335,10 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 		atomic.AddInt32(h.totThreads, 1)
 	}
 	rxData := make(chan nxtData)
-	var rttTotal uint64
-	var rttCnt int
 	stream := &HttpStream{
 		ctx: h.ctx, lg: h.lg, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
 		totThreads: h.totThreads,
-		rttTotal:   &rttTotal, rttCnt: &rttCnt,
 	}
 
 	session := r.Header.Get("x-nextensio-transport-sid")
@@ -359,14 +350,17 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 		return
 	}
 	primary := r.Header.Get("x-nextensio-transport-primary")
-	if primary == "true" {
-		sessionLock.Lock()
-		if sessions == nil {
-			sessions = make(map[uuid.UUID]*HttpStream)
-		}
-		sessions[stream.sid] = stream
-		sessionLock.Unlock()
+
+	sessionLock.Lock()
+	if sessions == nil {
+		sessions = make(map[uuid.UUID]*HttpStream)
 	}
+	if primary == "true" {
+		sessions[stream.sid] = stream
+	} else {
+		h.parent = sessions[stream.sid]
+	}
+	sessionLock.Unlock()
 
 	c <- common.NxtStream{Parent: stream.sid, Stream: stream, Http: &r.Header}
 
@@ -441,9 +435,8 @@ func (h *HttpStream) sendTiming() {
 	var data Timing
 
 	data.Uuid = h.sid
-	data.RttTotal = *h.rttTotal
-	data.RttCount = *h.rttCnt
-	data.ServerTime = uint64(time.Now().UnixNano())
+	data.Rtt = h.rtt
+	data.ServerTime = uint64(time.Now().Sub(h.initTime).Nanoseconds())
 	js, err := json.Marshal(data)
 	if err != nil {
 		return
@@ -474,10 +467,15 @@ func (h *HttpStream) sendTiming() {
 		return
 	}
 
-	start := time.Unix(0, int64(data.ServerTime))
-	elapsed := time.Since(start).Nanoseconds()
-	*h.rttTotal += uint64(elapsed)
-	*h.rttCnt += 1
+	elapsed := uint64(time.Now().Sub(h.initTime).Nanoseconds()) - data.ServerTime
+	h.rtts = append(h.rtts, elapsed)
+	h.rttTotal += elapsed
+	// sliding window
+	if len(h.rtts) > 100 {
+		h.rttTotal -= h.rtts[0]
+		h.rtts = h.rtts[1:]
+	}
+	h.rtt = h.rttTotal / uint64(len(h.rtts))
 }
 
 func periodicTiming(h *HttpStream) {
@@ -514,7 +512,7 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		}
 	}
 	req.Header.Add("x-nextensio-transport-sid", h.sid.String())
-	if h.primary {
+	if h.parent == nil {
 		req.Header.Add("x-nextensio-transport-primary", "true")
 	}
 
@@ -546,7 +544,7 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		}
 	}(h)
 
-	if h.primary && h.clocksync != 0 {
+	if h.parent == nil && h.clocksync != 0 {
 		go periodicTiming(h)
 	}
 
@@ -722,11 +720,9 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		requestHeader: hdr,
 		streamClosed:  make(chan struct{}),
 		totThreads:    h.totThreads,
-		rttTotal:      h.rttTotal,
-		rttCnt:        h.rttCnt,
 		sid:           h.sid,
 		server:        h.server,
-		primary:       false,
+		parent:        h,
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
@@ -781,25 +777,9 @@ func (h *HttpStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError
 }
 
 func (h *HttpStream) Timing() common.TimeInfo {
-	var rtt uint64
-	var drift int64
-	if !h.server {
-		cnt := *h.rttCnt
-		if cnt != 0 {
-			rtt = *h.rttTotal / uint64(cnt)
-		}
+	if h.parent != nil {
+		return common.TimeInfo{Rtt: h.parent.rtt}
 	} else {
-		sessionLock.Lock()
-		if sessions != nil {
-			s := sessions[h.sid]
-			if s != nil {
-				cnt := *s.rttCnt
-				if cnt != 0 {
-					rtt = *s.rttTotal / uint64(cnt)
-				}
-			}
-		}
-		sessionLock.Unlock()
+		return common.TimeInfo{Rtt: h.rtt}
 	}
-	return common.TimeInfo{Rtt: rtt, Drift: drift}
 }
