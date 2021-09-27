@@ -63,7 +63,6 @@ message NxtOnboard {
   string podname = 7;
   string connectId = 8;
   string attributes = 9;
-  string jaegerCollector = 10;
 }
 
 // source, dest, sport, dport, proto: standard five tuple associated with any
