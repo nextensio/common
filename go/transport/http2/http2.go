@@ -293,12 +293,13 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 			retBuf = append(retBuf, nbufs[1:]...)
 		}
 
+		setRtt(stream, hdr.Rtt)
+
 		switch hdr.Hdr.(type) {
 		case *nxthdr.NxtHdr_Keepalive:
 			stream.lg.Println("Recv keepalive")
 			// Nothing to do, client sends it just to keep the session "warm"
 		default:
-			setRtt(stream, hdr.Rtt)
 			select {
 			case stream.rxData <- nxtData{hdr: hdr, data: retBuf}:
 			case <-stream.streamClosed:

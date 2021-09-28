@@ -279,7 +279,7 @@ func nxtWriteClockSync(stream *WebStream, serverTime uint64) *common.NxtError {
 	hdr.Streamid = stream.stream
 	hdr.Datalen = 0
 	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
-	sync := nxthdr.NxtClockSync{ServerTime: serverTime, Rtt: stream.session.rtt}
+	sync := nxthdr.NxtClockSync{ServerTime: serverTime}
 	hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync = &sync
 	// Encode nextensio header and the header length
 	out, err := proto.Marshal(&hdr)
