@@ -87,6 +87,7 @@ type HttpStream struct {
 	rtts          []uint64
 	rtt           uint64
 	rttTotal      uint64
+	keepalive     int
 	clocksync     int
 	initTime      time.Time
 	parent        *HttpStream
@@ -98,9 +99,6 @@ type Timing struct {
 	Rtt        uint64    `json:"rtt"`
 }
 
-var sessionLock sync.RWMutex
-var sessions map[uuid.UUID]*HttpStream
-
 func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, totThreads *int32) *HttpStream {
 	return &HttpStream{
 		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
@@ -111,7 +109,7 @@ func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []by
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
-func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, clocksync int) *HttpStream {
+func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, keepalive int, clocksync int) *HttpStream {
 	h := HttpStream{
 		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
@@ -119,6 +117,7 @@ func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName st
 		totThreads:    totThreads,
 		server:        false,
 		sid:           uuid.New(),
+		keepalive:     keepalive,
 		clocksync:     clocksync,
 		initTime:      time.Now(),
 	}
@@ -274,14 +273,25 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 			retBuf = net.Buffers{nbufs[0][lenBytes:]}
 			retBuf = append(retBuf, nbufs[1:]...)
 		}
-		select {
-		case stream.rxData <- nxtData{hdr: hdr, data: retBuf}:
-		case <-stream.streamClosed:
-			atomic.AddInt32(&stream.listener.nthreads, -1)
-			if stream.totThreads != nil {
-				atomic.AddInt32(stream.totThreads, -1)
+
+		switch hdr.Hdr.(type) {
+		case *nxthdr.NxtHdr_Keepalive:
+			// Nothing to do, client sends it just to keep the session "warm"
+		case *nxthdr.NxtHdr_Sync:
+			// Just record the rtt, the serverTime is unused, send/recvTiming()
+			// takes care of doing the actual serverTime send and math
+			sync := hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync
+			stream.rtt = sync.Rtt
+		default:
+			select {
+			case stream.rxData <- nxtData{hdr: hdr, data: retBuf}:
+			case <-stream.streamClosed:
+				atomic.AddInt32(&stream.listener.nthreads, -1)
+				if stream.totThreads != nil {
+					atomic.AddInt32(stream.totThreads, -1)
+				}
+				return
 			}
-			return
 		}
 	}
 }
@@ -301,15 +311,6 @@ func recvTiming(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	sessionLock.Lock()
-	if sessions != nil {
-		s := sessions[data.Uuid]
-		if s != nil {
-			s.rtt = data.Rtt
-		}
-	}
-	sessionLock.Unlock()
 
 	js, err := json.Marshal(data)
 	if err != nil {
@@ -349,18 +350,6 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 		http.Error(w, "Session without sid", http.StatusInternalServerError)
 		return
 	}
-	primary := r.Header.Get("x-nextensio-transport-primary")
-
-	sessionLock.Lock()
-	if sessions == nil {
-		sessions = make(map[uuid.UUID]*HttpStream)
-	}
-	if primary == "true" {
-		sessions[stream.sid] = stream
-	} else {
-		stream.parent = sessions[stream.sid]
-	}
-	sessionLock.Unlock()
 
 	c <- common.NxtStream{Parent: stream.sid, Stream: stream, Http: &r.Header}
 
@@ -378,11 +367,6 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 			atomic.AddInt32(&h.nthreads, -1)
 			if h.totThreads != nil {
 				atomic.AddInt32(h.totThreads, -1)
-			}
-			if primary == "true" {
-				sessionLock.Lock()
-				delete(sessions, stream.sid)
-				sessionLock.Unlock()
 			}
 			return
 		}
@@ -512,9 +496,6 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		}
 	}
 	req.Header.Add("x-nextensio-transport-sid", h.sid.String())
-	if h.parent == nil {
-		req.Header.Add("x-nextensio-transport-primary", "true")
-	}
 
 	// The client.Do ends up launching two goroutines, one for reading
 	// body and transmitting it, one for reading the response headers and
@@ -544,6 +525,8 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		}
 	}(h)
 
+	// We want only one of these goroutines for a NewClient()+Dial(), we dont
+	// want this to be done on a NewStream()+Dial()
 	if h.parent == nil && h.clocksync != 0 {
 		go periodicTiming(h)
 	}
@@ -590,6 +573,78 @@ func (b *httpBody) readData(data nxtData) error {
 	return nil
 }
 
+func (b *httpBody) nxtWriteClockSync(serverTime uint64) error {
+	hdr := nxthdr.NxtHdr{}
+	// We don't maintain a streamid in case of http2, http2 manages that
+	hdr.Streamid = 0
+	hdr.Datalen = 0
+	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
+	sync := nxthdr.NxtClockSync{ServerTime: serverTime, Rtt: b.h.rtt}
+	hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync = &sync
+
+	// Encode nextensio header and the header length
+	out, err := proto.Marshal(&hdr)
+	if err != nil {
+		atomic.AddInt32(&b.h.nthreads, -1)
+		if b.h.totThreads != nil {
+			atomic.AddInt32(b.h.totThreads, -1)
+		}
+		return err
+	}
+	hdrlen := len(out)
+	var varint1 [common.MAXVARINT_BUF]byte
+	plen1 := binary.PutUvarint(varint1[0:], uint64(hdrlen))
+	dataLen := plen1 + hdrlen
+	// Encode the total length including nextensio headers, header length and payload
+	var varint2 [common.MAXVARINT_BUF]byte
+	plen2 := binary.PutUvarint(varint2[0:], uint64(dataLen))
+
+	hdrs := make([]byte, plen2+plen1+hdrlen)
+	copy(hdrs[0:], varint2[0:plen2])
+	copy(hdrs[plen2:], varint1[0:plen1])
+	copy(hdrs[plen2+plen1:], out)
+	b.bufs = net.Buffers{hdrs}
+	b.idx = 0
+	b.off = 0
+
+	return nil
+}
+
+func (b *httpBody) nxtWriteKeepalive() error {
+	hdr := nxthdr.NxtHdr{}
+	// We don't maintain a streamid in case of http2, http2 manages that
+	hdr.Streamid = 0
+	hdr.Datalen = 0
+	hdr.Hdr = &nxthdr.NxtHdr_Keepalive{}
+
+	// Encode nextensio header and the header length
+	out, err := proto.Marshal(&hdr)
+	if err != nil {
+		atomic.AddInt32(&b.h.nthreads, -1)
+		if b.h.totThreads != nil {
+			atomic.AddInt32(b.h.totThreads, -1)
+		}
+		return err
+	}
+	hdrlen := len(out)
+	var varint1 [common.MAXVARINT_BUF]byte
+	plen1 := binary.PutUvarint(varint1[0:], uint64(hdrlen))
+	dataLen := plen1 + hdrlen
+	// Encode the total length including nextensio headers, header length and payload
+	var varint2 [common.MAXVARINT_BUF]byte
+	plen2 := binary.PutUvarint(varint2[0:], uint64(dataLen))
+
+	hdrs := make([]byte, plen2+plen1+hdrlen)
+	copy(hdrs[0:], varint2[0:plen2])
+	copy(hdrs[plen2:], varint1[0:plen1])
+	copy(hdrs[plen2+plen1:], out)
+	b.bufs = net.Buffers{hdrs}
+	b.idx = 0
+	b.off = 0
+
+	return nil
+}
+
 // Send one nextensio frame worth of data each time Read() is called, if there
 // are no nextensio frames, block till one is available
 func (b *httpBody) Read(p []byte) (n int, err error) {
@@ -601,8 +656,30 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 		}
 		b.once = true
 	}
+	// 100 years, wish there was some time.After(for-ever-infinity)
+	keepalive := 876000 * time.Hour
+	if b.h.keepalive != 0 {
+		keepalive = time.Duration(b.h.keepalive) * time.Millisecond
+	}
+	// 100 years, wish there was some time.After(for-ever-infinity)
+	clocksync := 876000 * time.Hour
+	// Only servers send clocksync to client
+	if b.h.clocksync != 0 {
+		clocksync = time.Duration(b.h.clocksync) * time.Millisecond
+	}
+
 	if b.bufs == nil {
 		select {
+		case <-time.After(keepalive):
+			err := b.nxtWriteKeepalive()
+			if err != nil {
+				return 0, err
+			}
+		case <-time.After(clocksync):
+			err := b.nxtWriteClockSync(uint64(time.Now().Sub(b.h.initTime).Nanoseconds()))
+			if err != nil {
+				return 0, err
+			}
 		case data := <-b.txChan:
 			err := b.readData(data)
 			if err != nil {
@@ -722,7 +799,9 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		totThreads:    h.totThreads,
 		sid:           h.sid,
 		server:        h.server,
-		parent:        h,
+		parent:        h.parent,
+		clocksync:     h.clocksync, // every stream sends the calculated rtt to its other end
+		keepalive:     0,           // Only the first stream (NewClient) does keepalive
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr

@@ -106,7 +106,7 @@ func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serve
 	retry := 0
 	hdrs := make(http.Header)
 	lg := log.New(os.Stdout, "test", 0)
-	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs, nil, clocksync)
+	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs, nil, 0, clocksync)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++
@@ -445,15 +445,8 @@ func Test5ClockSync(t *testing.T) {
 		panic(0)
 	}
 
-	sessionLock.Lock()
-	if len(sessions) != 1 {
-		t.Error("Sessions not populated", sessions)
-		panic(0)
-	}
-	sessionLock.Unlock()
-
 	// 10 ms interval means we should have 100 rtts, ie at least 80
-	if len(c.rtts) < 80 || c.rtt == 0 {
+	if len(c.rtts) < 80 || c.rtt == 0 || s.rtt == 0 {
 		t.Error("Bad rtt counts", len(c.rtts), s.rtt)
 		panic(0)
 	}
@@ -461,12 +454,6 @@ func Test5ClockSync(t *testing.T) {
 
 	hsock.Close()
 	time.Sleep(time.Second)
-	sessionLock.Lock()
-	if len(sessions) != 0 {
-		t.Error("Sessions not empty", sessions)
-		panic(0)
-	}
-	sessionLock.Unlock()
 
 	fmt.Println("Waiting for all goroutines to go away")
 	wg.Wait()
