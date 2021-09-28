@@ -579,7 +579,7 @@ func (b *httpBody) nxtWriteClockSync(serverTime uint64) error {
 	hdr.Streamid = 0
 	hdr.Datalen = 0
 	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
-	sync := nxthdr.NxtClockSync{ServerTime: serverTime, Rtt: b.h.rtt}
+	sync := nxthdr.NxtClockSync{ServerTime: serverTime, Rtt: b.h.Timing().Rtt}
 	hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync = &sync
 
 	// Encode nextensio header and the header length
