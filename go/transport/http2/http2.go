@@ -297,7 +297,6 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 
 		switch hdr.Hdr.(type) {
 		case *nxthdr.NxtHdr_Keepalive:
-			stream.lg.Println("Recv keepalive")
 			// Nothing to do, client sends it just to keep the session "warm"
 		default:
 			select {
@@ -654,7 +653,6 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 			if err != nil {
 				return 0, err
 			}
-			b.h.lg.Println("Sent keepalive")
 		case data := <-b.txChan:
 			err := b.readData(data)
 			if err != nil {
