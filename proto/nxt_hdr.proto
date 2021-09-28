@@ -10,13 +10,7 @@ option go_package = "gitlab.com/nextensio/common/messages/nxthdr";
 
 // The cluster sends a clock sync message to the agents with its time
 // (serverTime), agent responds to the mssage with the serverTime
-// The server is the one that calculates rtt, so with each message it
-// sends to the client, it also includes the rtt it has calculated so
-// far if the client wants to store/use it
-message NxtClockSync {
-  uint64 serverTime = 1;
-  uint64 rtt = 2;
-}
+message NxtClockSync { uint64 serverTime = 1; }
 
 // traceCtx is the Jaeger traceid (context) from the Uber-Trace-Id HTTP header.
 //
@@ -153,6 +147,9 @@ message NxtClose {}
 //
 // oneof hdr: The header can be ONE of many different types based on what info
 // it carries
+//
+// rtt: in some transports like http2, this is used to convey rtt from the
+// server end to the client end
 message NxtHdr {
   uint32 datalen = 1;
   uint64 streamid = 2;
@@ -164,4 +161,5 @@ message NxtHdr {
     NxtTrace trace = 7;
     NxtClockSync sync = 8;
   }
+  uint64 rtt = 9;
 }

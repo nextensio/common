@@ -446,7 +446,7 @@ func Test5ClockSync(t *testing.T) {
 	}
 
 	// 10 ms interval means we should have 100 rtts, ie at least 80
-	if len(c.rtts) < 80 || c.rtt == 0 || s.rtt == 0 {
+	if len(c.rtts) < 80 || c.rtt == 0 {
 		t.Error("Bad rtt counts", len(c.rtts), s.rtt)
 		panic(0)
 	}

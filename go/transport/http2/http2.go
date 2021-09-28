@@ -163,6 +163,25 @@ func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName st
 	return &h
 }
 
+// In kubernetes, there can be multiple "replicas" in a given pod,
+// sendTiming/recvTiming is calculating rtts each time with one of the
+// pods in the replicas, as decided by envoy's loadbalancing algo. So
+// over time what we get is an average across all the replicas. The
+// rtt sendTiming and rtt calculation is done from the http client end,
+// now how do we ensure that the timing info is conveyed to every single
+// replica in the pod in the http server end ? We cant, there is no way
+// to address each pod independently, and we dont really want to do that,
+// we dont want to get into the business of addressing pods independently.
+// So the only option we have is to include the rtt in the header with
+// every packet sent from the client end, its ugly but thats all we can do,
+// and its not just with http2, any transport we use in an istio environment
+// with loadbalancing will have this trouble
+func setRtt(stream *HttpStream, rtt uint64) {
+	if stream.server {
+		stream.rtt = rtt
+	}
+}
+
 // The http2 stream remains open forever, as long as the nextensio flow corresponding to the stream
 // needs it to be open. And the nextensio flow keeps sending its data over this http2 stream chunked
 // and written into the body. That means, when we read from the request body below, we are NOT
@@ -276,13 +295,10 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 
 		switch hdr.Hdr.(type) {
 		case *nxthdr.NxtHdr_Keepalive:
+			stream.lg.Println("Recv keepalive")
 			// Nothing to do, client sends it just to keep the session "warm"
-		case *nxthdr.NxtHdr_Sync:
-			// Just record the rtt, the serverTime is unused, send/recvTiming()
-			// takes care of doing the actual serverTime send and math
-			sync := hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync
-			stream.rtt = sync.Rtt
 		default:
+			setRtt(stream, hdr.Rtt)
 			select {
 			case stream.rxData <- nxtData{hdr: hdr, data: retBuf}:
 			case <-stream.streamClosed:
@@ -413,6 +429,10 @@ func (h *HttpStream) Listen(c chan common.NxtStream) {
 	}
 }
 
+// In kubernetes, there can be multiple "replicas" in a given pod,
+// sendTiming/recvTiming is calculating rtts each time with one of the
+// pods in the replicas, as decided by envoy's loadbalancing algo. So
+// over time what we get is an average across all the replicas
 // NOTE: The timing sync is periodically attempted, so a failure here is
 // not fatal
 func (h *HttpStream) sendTiming() {
@@ -454,7 +474,8 @@ func (h *HttpStream) sendTiming() {
 	elapsed := uint64(time.Now().Sub(h.initTime).Nanoseconds()) - data.ServerTime
 	h.rtts = append(h.rtts, elapsed)
 	h.rttTotal += elapsed
-	// sliding window
+	// sliding window, so each of the rtts here "might" have been measured
+	// with a different pod
 	if len(h.rtts) > 100 {
 		h.rttTotal -= h.rtts[0]
 		h.rtts = h.rtts[1:]
@@ -525,9 +546,7 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		}
 	}(h)
 
-	// We want only one of these goroutines for a NewClient()+Dial(), we dont
-	// want this to be done on a NewStream()+Dial()
-	if h.parent == nil && h.clocksync != 0 {
+	if h.clocksync != 0 {
 		go periodicTiming(h)
 	}
 
@@ -541,6 +560,7 @@ func (b *httpBody) readData(data nxtData) error {
 	for _, b := range data.data {
 		total += len(b)
 	}
+	data.hdr.Rtt = b.h.Timing().Rtt
 	data.hdr.Datalen = uint32(total)
 
 	// Encode nextensio header and the header length
@@ -573,48 +593,12 @@ func (b *httpBody) readData(data nxtData) error {
 	return nil
 }
 
-func (b *httpBody) nxtWriteClockSync(serverTime uint64) error {
-	hdr := nxthdr.NxtHdr{}
-	// We don't maintain a streamid in case of http2, http2 manages that
-	hdr.Streamid = 0
-	hdr.Datalen = 0
-	hdr.Hdr = &nxthdr.NxtHdr_Sync{}
-	sync := nxthdr.NxtClockSync{ServerTime: serverTime, Rtt: b.h.Timing().Rtt}
-	hdr.Hdr.(*nxthdr.NxtHdr_Sync).Sync = &sync
-
-	// Encode nextensio header and the header length
-	out, err := proto.Marshal(&hdr)
-	if err != nil {
-		atomic.AddInt32(&b.h.nthreads, -1)
-		if b.h.totThreads != nil {
-			atomic.AddInt32(b.h.totThreads, -1)
-		}
-		return err
-	}
-	hdrlen := len(out)
-	var varint1 [common.MAXVARINT_BUF]byte
-	plen1 := binary.PutUvarint(varint1[0:], uint64(hdrlen))
-	dataLen := plen1 + hdrlen
-	// Encode the total length including nextensio headers, header length and payload
-	var varint2 [common.MAXVARINT_BUF]byte
-	plen2 := binary.PutUvarint(varint2[0:], uint64(dataLen))
-
-	hdrs := make([]byte, plen2+plen1+hdrlen)
-	copy(hdrs[0:], varint2[0:plen2])
-	copy(hdrs[plen2:], varint1[0:plen1])
-	copy(hdrs[plen2+plen1:], out)
-	b.bufs = net.Buffers{hdrs}
-	b.idx = 0
-	b.off = 0
-
-	return nil
-}
-
 func (b *httpBody) nxtWriteKeepalive() error {
 	hdr := nxthdr.NxtHdr{}
 	// We don't maintain a streamid in case of http2, http2 manages that
 	hdr.Streamid = 0
 	hdr.Datalen = 0
+	hdr.Rtt = b.h.Timing().Rtt
 	hdr.Hdr = &nxthdr.NxtHdr_Keepalive{}
 
 	// Encode nextensio header and the header length
@@ -661,12 +645,6 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 	if b.h.keepalive != 0 {
 		keepalive = time.Duration(b.h.keepalive) * time.Millisecond
 	}
-	// 100 years, wish there was some time.After(for-ever-infinity)
-	clocksync := 876000 * time.Hour
-	// Only servers send clocksync to client
-	if b.h.clocksync != 0 {
-		clocksync = time.Duration(b.h.clocksync) * time.Millisecond
-	}
 
 	if b.bufs == nil {
 		select {
@@ -675,11 +653,7 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 			if err != nil {
 				return 0, err
 			}
-		case <-time.After(clocksync):
-			err := b.nxtWriteClockSync(uint64(time.Now().Sub(b.h.initTime).Nanoseconds()))
-			if err != nil {
-				return 0, err
-			}
+			b.h.lg.Println("Sent keepalive")
 		case data := <-b.txChan:
 			err := b.readData(data)
 			if err != nil {
@@ -792,16 +766,20 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		}
 	}
 
+	parent := h
+	if h.parent != nil {
+		parent = h.parent
+	}
 	nh := HttpStream{
 		ctx: h.ctx, lg: h.lg, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
 		requestHeader: hdr,
 		streamClosed:  make(chan struct{}),
 		totThreads:    h.totThreads,
 		sid:           h.sid,
-		server:        h.server,
-		parent:        h.parent,
-		clocksync:     h.clocksync, // every stream sends the calculated rtt to its other end
-		keepalive:     0,           // Only the first stream (NewClient) does keepalive
+		server:        false,
+		parent:        parent,
+		clocksync:     0, // Only the first stream (NewClient) does clocksync
+		keepalive:     0, // Only the first stream (NewClient) does keepalive
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
