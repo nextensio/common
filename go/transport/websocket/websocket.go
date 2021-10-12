@@ -580,8 +580,10 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 		var stream *WebStream = session.streams[sid]
 		session.slock.Unlock()
 
-		if dtype == streamClockSync && stream != nil {
-			handleClockSync(stream, data)
+		if dtype == streamClockSync {
+			if stream != nil {
+				handleClockSync(stream, data)
+			}
 			continue
 		}
 
@@ -637,26 +639,33 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 }
 
 func streamWrite(h *WebStream) {
-	// 100 years, wish there was some time.After(for-ever-infinity)
+	// 100 years, wish there was some time value for-ever-infinitys
 	keepalive := 876000 * time.Hour
 	// Only clients send keepalives to server
 	if !h.session.server && h.keepalive != 0 {
 		keepalive = time.Duration(h.keepalive) * time.Millisecond
 	}
-	// 100 years, wish there was some time.After(for-ever-infinity)
+	// 100 years, wish there was some time value for-ever-infinity
 	clocksync := 876000 * time.Hour
 	// Only servers send clocksync to client
 	if h.session.server && h.clocksync != 0 && h.stream == 0 {
 		clocksync = time.Duration(h.clocksync) * time.Millisecond
 	}
+	keepTimer := time.NewTimer(keepalive)
+	defer keepTimer.Stop()
+	syncTimer := time.NewTimer(clocksync)
+	defer syncTimer.Stop()
+
 	for {
 		err := false
 		select {
-		case <-time.After(keepalive):
+		case <-keepTimer.C:
+			keepTimer.Reset(keepalive)
 			if nxtWriteKeepalive(h) != nil {
 				err = true
 			}
-		case <-time.After(clocksync):
+		case <-syncTimer.C:
+			syncTimer.Reset(clocksync)
 			if nxtWriteClockSync(h, uint64(time.Now().Sub(h.session.initTime).Nanoseconds())) != nil {
 				err = true
 			}
