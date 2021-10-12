@@ -640,15 +640,18 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 		}
 		b.once = true
 	}
-	// 100 years, wish there was some time.After(for-ever-infinity)
+	// 100 years, wish there was some time value for-ever-infinity
 	keepalive := 876000 * time.Hour
 	if b.h.keepalive != 0 {
 		keepalive = time.Duration(b.h.keepalive) * time.Millisecond
 	}
+	keepTimer := time.NewTimer(keepalive)
+	defer keepTimer.Stop()
 
 	if b.bufs == nil {
 		select {
-		case <-time.After(keepalive):
+		case <-keepTimer.C:
+			keepTimer.Reset(keepalive)
 			err := b.nxtWriteKeepalive()
 			if err != nil {
 				return 0, err
