@@ -29,6 +29,9 @@ var szVerified = false
 var testNpkts uint32
 var slock sync.Mutex
 var serverStream []common.Transport
+var pool common.NxtPool
+
+const MAXBUF = 2048 * 3
 
 func getKeys() ([]byte, []byte) {
 	pvtKey, err := ioutil.ReadFile("./pems/server.pem")
@@ -60,7 +63,7 @@ func readStream(ctx context.Context, parent uuid.UUID, tunnel common.Transport) 
 			panic(onboard.Services[2])
 		}
 		atomic.AddUint32(&testNpkts, 1)
-		if verifyBytes(buf, sz) {
+		if verifyBytes(buf.Slices, sz) {
 			szVerified = true
 		} else {
 			panic("Verify Bytes fail")
@@ -76,7 +79,7 @@ func http2sockServer(ctx context.Context, encrypted bool, sChan chan common.NxtS
 		pvtKey, pubKey = getKeys()
 	}
 	lg := log.New(os.Stdout, "test", 0)
-	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, nil)
+	server := NewListener(ctx, lg, pool, pvtKey, pubKey, testPort, nil)
 	go server.Listen(sChan)
 	for {
 		select {
@@ -106,7 +109,7 @@ func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serve
 	retry := 0
 	hdrs := make(http.Header)
 	lg := log.New(os.Stdout, "test", 0)
-	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, hdrs, nil, 0, clocksync)
+	sock := NewClient(ctx, lg, pool, cert, serverName, serverIP, port, hdrs, nil, 0, clocksync)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++
@@ -120,26 +123,31 @@ func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serve
 }
 
 // Just fill a pattern of 0, 1, 2 .., 255, 0, 1, 2 .. into the buffer
-func generateBytes(testSize int) net.Buffers {
-	var buf net.Buffers = net.Buffers{}
+func generateBytes(testSize int) common.NxtBufs {
+	nxtBufs := common.NxtBufs{Slices: net.Buffers{}, Bufs: nil}
+	var b *common.NxtBuf
 	var cur []byte = nil
 	var pos int = 0
 	for i := 0; i < testSize; i++ {
 		if cur == nil {
-			cur = make([]byte, common.MAXBUF)
+			b = common.GetBuf(pool)
+			cur = (*b).Buf
 			pos = 0
 		}
 		cur[pos] = byte(i % 256)
 		pos++
-		if pos == common.MAXBUF {
-			buf = append(buf, cur)
+		if pos == MAXBUF {
+			nxtBufs.Slices = append(nxtBufs.Slices, cur)
+			nxtBufs.Bufs = append(nxtBufs.Bufs, b)
 			cur = nil
+			b = nil
 		}
 	}
 	if cur != nil {
-		buf = append(buf, cur[0:pos])
+		nxtBufs.Slices = append(nxtBufs.Slices, cur[0:pos])
+		nxtBufs.Bufs = append(nxtBufs.Bufs, b)
 	}
-	return buf
+	return nxtBufs
 }
 
 func verifyHdr(hdr *nxthdr.NxtHdr) bool {
@@ -163,7 +171,7 @@ func verifyHdr(hdr *nxthdr.NxtHdr) bool {
 func verifyBytes(buf net.Buffers, size int) bool {
 	var b = 0
 	for i := 0; i < len(buf); i++ {
-		if len(buf[i]) > common.MAXBUF {
+		if len(buf[i]) > MAXBUF {
 			fmt.Println("Buflen toobig", len(buf[i]))
 			return false
 		}
@@ -190,7 +198,7 @@ func sendPkt(hsock common.Transport, testSize int) {
 	hdr := nxthdr.NxtHdr{}
 	hdr.Hdr = &nxthdr.NxtHdr_Onboard{Onboard: &onboard}
 	buf := generateBytes(testSize)
-	err := hsock.Write(&hdr, buf)
+	err := hsock.Write(&hdr, &buf)
 	if err != nil {
 		panic(err)
 	}
@@ -227,6 +235,7 @@ func burstTest(hsock common.Transport, burstSz int) {
 // Plain text HTTP2: Test different packet sizes, and also test bursting a bunch of packets
 // The tests are run bidirectional - from each end to the opposite end
 func Test1PktsPlainText(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -238,8 +247,8 @@ func Test1PktsPlainText(t *testing.T) {
 		return
 	}
 	sizeTest(hsock, []int{
-		1000, common.MAXBUF, common.MAXBUF + 1, 2 * common.MAXBUF,
-		2*common.MAXBUF + 1, 2*common.MAXBUF + 100, 4*common.MAXBUF + 123, 7*common.MAXBUF + 100},
+		1000, MAXBUF, MAXBUF + 1, 2 * MAXBUF,
+		2*MAXBUF + 1, 2*MAXBUF + 100, 4*MAXBUF + 123, 7*MAXBUF + 100},
 	)
 
 	burstTest(hsock, 4096)
@@ -252,6 +261,7 @@ func Test1PktsPlainText(t *testing.T) {
 // Test different packet sizes, and also test bursting a bunch of packets
 // The tests are run bidirectional - from each end to the opposite end
 func Test2Pkts(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -263,8 +273,8 @@ func Test2Pkts(t *testing.T) {
 		return
 	}
 	sizeTest(hsock, []int{
-		1000, common.MAXBUF, common.MAXBUF + 1, 2 * common.MAXBUF,
-		2*common.MAXBUF + 1, 2*common.MAXBUF + 100, 4*common.MAXBUF + 123, 7*common.MAXBUF + 100},
+		1000, MAXBUF, MAXBUF + 1, 2 * MAXBUF,
+		2*MAXBUF + 1, 2*MAXBUF + 100, 4*MAXBUF + 123, 7*MAXBUF + 100},
 	)
 
 	burstTest(hsock, 4096)
@@ -287,6 +297,7 @@ func streamsTest(streams []common.Transport) {
 
 // Test ability to create and delete streams from the client side
 func Test3ClientStreams(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -335,7 +346,7 @@ func Test3ClientStreams(t *testing.T) {
 	// all streams are closed, now a read/write should return error
 	for i := 0; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
-		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err := streams[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}, Bufs: nil})
 		if err == nil {
 			panic(i)
 		}
@@ -361,6 +372,7 @@ func totalClientStreams(streams []common.Transport) int {
 // Test ability to create streams from the client side and delete streams from server side
 // Remember we cannot create http2 streams from server to client
 func Test4ClientStreamsServerClose(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -407,7 +419,7 @@ func Test4ClientStreamsServerClose(t *testing.T) {
 	// all streams are closed, now a read/write should return error
 	for i := 0; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
-		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err := streams[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}, Bufs: nil})
 		if err == nil {
 			panic(i)
 		}
@@ -421,6 +433,7 @@ func Test4ClientStreamsServerClose(t *testing.T) {
 }
 
 func Test5ClockSync(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)

@@ -19,6 +19,7 @@ import (
 type Proxy struct {
 	ctx      context.Context
 	lg       *log.Logger
+	pool     common.NxtPool
 	listen   uint16
 	listener *http.Server
 	conn     net.Conn
@@ -30,8 +31,8 @@ type Proxy struct {
 	hdr      *nxthdr.NxtHdr
 }
 
-func NewListener(ctx context.Context, lg *log.Logger, port uint16) *Proxy {
-	return &Proxy{ctx: ctx, lg: lg, listen: port}
+func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, port uint16) *Proxy {
+	return &Proxy{ctx: ctx, lg: lg, pool: pool, listen: port}
 }
 
 func makeHdr(p *Proxy) *nxthdr.NxtHdr {
@@ -86,7 +87,7 @@ func hijackHttp(p *Proxy, c chan common.NxtStream, w http.ResponseWriter, r *htt
 	// The proxy CONNECT request needs an OK response before anything further
 	httpOk := http.Response{StatusCode: 200, ProtoMajor: 1, ProtoMinor: 1}
 	httpOk.Write(conn)
-	newP := Proxy{src: shost, sport: uint16(sport), dest: dhost, dport: uint16(dport), conn: conn, lg: p.lg}
+	newP := Proxy{src: shost, sport: uint16(sport), dest: dhost, dport: uint16(dport), conn: conn, lg: p.lg, pool: p.pool}
 	newP.hdr = makeHdr(&newP)
 	c <- common.NxtStream{Parent: uuid.New(), Stream: &newP}
 }
@@ -156,8 +157,9 @@ func (p *Proxy) NewStream(hdr http.Header) common.Transport {
 	panic("proxy is accept-only, no new streams can be created")
 }
 
-func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
-	for _, b := range buf {
+func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf *common.NxtBufs) *common.NxtError {
+	defer common.PutBufs(buf.Bufs)
+	for _, b := range buf.Slices {
 		_, err := p.conn.Write(b)
 		if err != nil {
 			return common.Err(common.CONNECTION_ERR, err)
@@ -166,15 +168,17 @@ func (p *Proxy) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	return nil
 }
 
-func (p *Proxy) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
-	buf := make([]byte, common.MAXBUF)
+func (p *Proxy) Read() (*nxthdr.NxtHdr, *common.NxtBufs, *common.NxtError) {
+	nxtBuf := common.GetBuf(p.pool)
+	buf := (*nxtBuf).Buf
 	n, err := p.conn.Read(buf)
 	if err != nil {
 		if err != io.EOF || n == 0 {
 			return nil, nil, common.Err(common.CONNECTION_ERR, err)
 		}
 	}
-	return p.hdr, net.Buffers{buf[:n]}, nil
+	retBuf := common.NxtBufs{Slices: net.Buffers{buf[:n]}, Bufs: []*common.NxtBuf{nxtBuf}}
+	return p.hdr, &retBuf, nil
 }
 
 func (p *Proxy) SetReadDeadline(t time.Time) *common.NxtError {

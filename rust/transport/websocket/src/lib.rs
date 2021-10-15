@@ -6,6 +6,7 @@ use common::{
     NxtErr::EWOULDBLOCK,
     NxtError, RawStream, RegType, MAXVARINT_BUF,
 };
+use log::error;
 use mio::{Interest, Poll, Token};
 use native_tls::{Certificate, TlsConnector, TlsConnectorBuilder, TlsStream};
 use object_pool::{Pool, Reusable};
@@ -162,6 +163,13 @@ impl WebSession {
             buf[0] = 0;
             match self.socket.as_mut().unwrap().read(&mut buf[..]) {
                 Ok(size) => {
+                    if size == 0 {
+                        error!("Zero length read");
+                        return Err(NxtError {
+                            code: CONNECTION,
+                            detail: "zero length read".to_string(),
+                        });
+                    }
                     self.line += size;
                     if buf[0] == '\r' as u8 {
                         self.cr = true;
@@ -487,7 +495,13 @@ fn write_header(
     if let Some(mut buf) = common::pool_get(pkt_pool.clone()) {
         varint_encode(hdrlen, &mut buf[0..hbytes]);
         let mut hdrbuf = &mut buf[hbytes..hbytes + hdrlen];
-        hdr.encode(&mut hdrbuf).unwrap();
+        if hdr.encode(&mut hdrbuf).is_err() {
+            error!("Cannot encode header of length {}", hdrlen);
+            return Err(NxtError {
+                code: NxtErr::CONNECTION,
+                detail: "header too big".to_string(),
+            });
+        }
         unsafe {
             buf.set_len(hbytes + hdrlen);
         }

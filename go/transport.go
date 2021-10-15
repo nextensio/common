@@ -3,6 +3,7 @@ package common
 import (
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
@@ -34,8 +35,18 @@ const (
 // be plenty, we will never have a header that big !!
 const MAXVARINT_BUF = 4
 
-var MAXBUF = (2048 * 3)
 var LazyNoCopy = gopacket.DecodeOptions{Lazy: true, NoCopy: true}
+
+type NxtBuf struct {
+	refcount int32
+	Buf      []byte
+	pool     *sync.Pool
+}
+
+type NxtBufs struct {
+	Slices net.Buffers
+	Bufs   []*NxtBuf
+}
 
 type TimeInfo struct {
 	Rtt uint64
@@ -67,7 +78,7 @@ type NxtStream struct {
 // any number of other streams. The reads and writes are all blocking in nature. Again this not
 // any model we are proposing, the entire golang net.Conn framework follows this standard model
 //
-// NOTE on net.Buffers: As we can see below, the Read() and Write() APIs work with net.Buffers,
+// NOTE on net.Buffers: As we can see below, the Read() and Write() APIs work with NxtBufs / net.Buffers,
 // which assumes that data is split into multiple chunks and not necessarily always one big buffer.
 // Now why is that ?? This is nothing new - its the age old problem in packet forwarding. We will
 // end up queueing these buffers in different places when we hit flow control. And in that case,
@@ -136,7 +147,7 @@ type Transport interface {
 	// framework in go does allow that, but here we enforce that any non-nil error returned means
 	// that there is no valid data returned. So wherever we use Read() on net.Conn, we need to check
 	// for io.EOF and data len != 0, but with nextensio transport we dont need to check that
-	Read() (*nxthdr.NxtHdr, net.Buffers, *NxtError)
+	Read() (*nxthdr.NxtHdr, *NxtBufs, *NxtError)
 
 	// Parameters:
 	// first parameter nxthdr: the nextensio headers to push before the payload
@@ -154,7 +165,7 @@ type Transport interface {
 	//
 	// NOTE2: The buffer given to write is "consumed" by write, ie the writer cannot use that buffer
 	// again, if they do, that will corrupt the data that gets sent
-	Write(*nxthdr.NxtHdr, net.Buffers) *NxtError
+	Write(*nxthdr.NxtHdr, *NxtBufs) *NxtError
 
 	Timing() TimeInfo
 }

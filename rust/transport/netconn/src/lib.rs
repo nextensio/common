@@ -162,6 +162,14 @@ impl common::Transport for NetConn {
             },
             RawStream::Udp(s) => match s.recv(&mut buf[0..]) {
                 Ok(size) => {
+                    // Why would we get read of size 0 ? Even if its a non blocking
+                    // socket, that should be an error WouldBlock
+                    if size == 0 {
+                        return Err(NxtError {
+                            code: CONNECTION,
+                            detail: "".to_string(),
+                        });
+                    }
                     unsafe { buf.set_len(size) }
                     return Ok((
                         0,
