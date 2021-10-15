@@ -63,16 +63,18 @@ type webSession struct {
 	rttTotal   uint64
 	rtt        uint64
 	initTime   time.Time
+	pool       common.NxtPool
 }
 
 type nxtData struct {
 	hdr  *nxthdr.NxtHdr
-	data net.Buffers
+	data *common.NxtBufs
 }
 
 type WebStream struct {
 	ctx           context.Context
 	lg            *log.Logger
+	pool          common.NxtPool
 	listener      *net.Listener
 	serverIP      string
 	serverName    string
@@ -94,17 +96,17 @@ type WebStream struct {
 	clocksync     int
 }
 
-func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, keepalive int, keepcount int, clocksync int) *WebStream {
+func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, pvtKey []byte, pubKey []byte, port int, keepalive int, keepcount int, clocksync int) *WebStream {
 	return &WebStream{
-		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port, keepalive: keepalive, keepcount: keepcount, clocksync: clocksync,
+		ctx: ctx, lg: lg, pool: pool, pvtKey: pvtKey, pubKey: pubKey, port: port, keepalive: keepalive, keepcount: keepcount, clocksync: clocksync,
 	}
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new websocket is initiated
-func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header,
+func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header,
 	keepalive int) *WebStream {
 	return &WebStream{
-		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port, requestHeader: requestHeader,
+		ctx: ctx, lg: lg, pool: pool, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port, requestHeader: requestHeader,
 		keepalive: keepalive, keepcount: 0,
 	}
 }
@@ -160,11 +162,13 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 	if hdrLen > 64*1024 {
 		return 0, nil, 0, common.Err(common.CONNECTION_ERR, nil)
 	}
+	var nxtBuf *common.NxtBuf
 	var hdrbuf []byte
-	if int(hdrLen) > common.MAXBUF {
+	if uint(hdrLen) > session.pool.Size {
 		hdrbuf = make([]byte, hdrLen)
 	} else {
-		hdrbuf = make([]byte, common.MAXBUF)
+		nxtBuf = common.GetBuf(session.pool)
+		hdrbuf = (*nxtBuf).Buf
 	}
 
 	// We read not only the header length varint encoding, but maybe one byte of
@@ -190,6 +194,8 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 	if err != nil {
 		return 0, nil, 0, common.Err(common.CONNECTION_ERR, err)
 	}
+	// We are done with the header buf
+	common.PutBuf(nxtBuf)
 	// Just sanity check for ridiculous values so we dont end up affecting
 	// all sessions
 	if hdr.Datalen > 1024*1024 {
@@ -199,15 +205,18 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 	total = 0
 	off := 0
 	end := 0
-	databuf := make([]byte, common.MAXBUF)
-	data := &nxtData{data: net.Buffers{}, hdr: &hdr}
+	nxtBuf = common.GetBuf(session.pool)
+	databuf := (*nxtBuf).Buf
+	data := &nxtData{data: &common.NxtBufs{Slices: net.Buffers{}, Bufs: nil}, hdr: &hdr}
 	for {
 		remaining := int(hdr.Datalen) - total
-		if remaining == 0 || off >= common.MAXBUF {
+		if remaining == 0 || off >= int(session.pool.Size) {
 			if off != 0 {
-				data.data = append(data.data, databuf[0:off])
+				data.data.Slices = append(data.data.Slices, databuf[0:off])
+				data.data.Bufs = append(data.data.Bufs, nxtBuf)
 				if remaining != 0 {
-					databuf = make([]byte, common.MAXBUF)
+					nxtBuf = common.GetBuf(session.pool)
+					databuf = (*nxtBuf).Buf
 					off = 0
 				}
 			}
@@ -215,8 +224,8 @@ func nxtRead(session *webSession) (uint64, *nxtData, int, *common.NxtError) {
 		if remaining == 0 {
 			break
 		}
-		if off+remaining >= common.MAXBUF {
-			end = common.MAXBUF
+		if off+remaining >= int(session.pool.Size) {
+			end = int(session.pool.Size)
 		} else {
 			end = off + remaining
 		}
@@ -310,11 +319,12 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 
 	stream.session.wlock.Lock()
 	defer stream.session.wlock.Unlock()
+	defer common.PutBufs(data.data.Bufs)
 
 	// This is what identifies us as a stream to the other end
 	data.hdr.Streamid = stream.stream
 	total := 0
-	for _, b := range data.data {
+	for _, b := range data.data.Slices {
 		total += len(b)
 	}
 	data.hdr.Datalen = uint32(total)
@@ -335,7 +345,7 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 	if err != nil {
 		return common.Err(common.CONNECTION_ERR, err)
 	}
-	for _, b := range data.data {
+	for _, b := range data.data.Slices {
 		_, err = stream.session.conn.Write(b[0:])
 		if err != nil {
 			return common.Err(common.CONNECTION_ERR, err)
@@ -594,7 +604,7 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 			streamClosed := make(chan struct{})
 			stream = &WebStream{
 				ctx: ctx, rxData: rxData, txData: txData, sendClose: sendClose, streamClosed: streamClosed,
-				stream: sid, session: session, lg: lg, keepalive: 0, keepcount: 0, clocksync: session.clocksync,
+				stream: sid, session: session, lg: lg, pool: session.pool, keepalive: 0, keepcount: 0, clocksync: session.clocksync,
 			}
 			session.slock.Lock()
 			session.streams[sid] = stream
@@ -748,6 +758,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 			keepRx:     0,
 			clocksync:  h.clocksync,
 			initTime:   time.Now(),
+			pool:       h.pool,
 		}
 		go sessionRead(h.ctx, h.lg, session, c)
 	}
@@ -801,6 +812,7 @@ func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 		keepcount:  0,
 		closed:     false,
 		keepRx:     0,
+		pool:       h.pool,
 	}
 	session.streams[0] = h
 
@@ -889,7 +901,7 @@ func (h *WebStream) NewStream(hdr http.Header) common.Transport {
 	}
 	stream := WebStream{
 		rxData: rxData, txData: txData, sendClose: sendClose, streamClosed: streamClosed,
-		stream: sid, session: h.session, lg: h.lg, keepalive: 0, keepcount: 0, clocksync: h.clocksync,
+		stream: sid, session: h.session, lg: h.lg, pool: h.pool, keepalive: 0, keepcount: 0, clocksync: h.clocksync,
 	}
 	h.session.slock.Lock()
 	h.session.streams[sid] = &stream
@@ -899,7 +911,7 @@ func (h *WebStream) NewStream(hdr http.Header) common.Transport {
 	return &stream
 }
 
-func (h *WebStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
+func (h *WebStream) Read() (*nxthdr.NxtHdr, *common.NxtBufs, *common.NxtError) {
 	select {
 	case data := <-h.rxData:
 		return data.hdr, data.data, nil
@@ -914,7 +926,7 @@ func (h *WebStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	}
 }
 
-func (h *WebStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
+func (h *WebStream) Write(hdr *nxthdr.NxtHdr, buf *common.NxtBufs) *common.NxtError {
 
 	// After the channel is closed, we might be able to queue up data on the txData
 	// channel because it is a buffered channel, it will get cleaned up by golang GC,

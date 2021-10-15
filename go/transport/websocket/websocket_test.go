@@ -30,6 +30,9 @@ var testNpkts uint32
 var slock sync.Mutex
 var serverStream []common.Transport
 var clientStream []common.Transport
+var pool common.NxtPool
+
+const MAXBUF = 2048 * 3
 
 func getKeys() ([]byte, []byte) {
 	pvtKey, err := ioutil.ReadFile("./pems/server.pem")
@@ -66,7 +69,7 @@ func readStream(ctx context.Context, parent uuid.UUID, tunnel common.Transport) 
 			panic(onboard.Services[2])
 		}
 		atomic.AddUint32(&testNpkts, 1)
-		if verifyBytes(buf, sz) {
+		if verifyBytes(buf.Slices, sz) {
 			szVerified = true
 		} else {
 			panic("Verify Bytes fail")
@@ -77,7 +80,7 @@ func readStream(ctx context.Context, parent uuid.UUID, tunnel common.Transport) 
 func websockServer(ctx context.Context, sChan chan common.NxtStream) {
 	pvtKey, pubKey := getKeys()
 	lg := log.New(os.Stdout, "test", 0)
-	server := NewListener(ctx, lg, pvtKey, pubKey, testPort, 0, 0, 0)
+	server := NewListener(ctx, lg, pool, pvtKey, pubKey, testPort, 0, 0, 0)
 	go server.Listen(sChan)
 	for {
 		select {
@@ -105,7 +108,7 @@ func dialWebsock(ctx context.Context, serverName string, serverIP string, port i
 	var httpHdr = make(http.Header)
 	httpHdr.Add("x-nextensio-connect", "cpod-1")
 	httpHdr.Add("x-nextensio-agent", "foobar")
-	sock := NewClient(ctx, lg, cert, serverName, serverIP, port, nil, 0)
+	sock := NewClient(ctx, lg, pool, cert, serverName, serverIP, port, nil, 0)
 	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
 		sock.Close()
 		retry++
@@ -119,26 +122,31 @@ func dialWebsock(ctx context.Context, serverName string, serverIP string, port i
 }
 
 // Just fill a pattern of 0, 1, 2 .., 255, 0, 1, 2 .. into the buffer
-func generateBytes(testSize int) net.Buffers {
-	var buf net.Buffers = net.Buffers{}
+func generateBytes(testSize int) common.NxtBufs {
+	nxtBufs := common.NxtBufs{Slices: net.Buffers{}, Bufs: nil}
+	var b *common.NxtBuf
 	var cur []byte = nil
 	var pos int = 0
 	for i := 0; i < testSize; i++ {
 		if cur == nil {
-			cur = make([]byte, common.MAXBUF)
+			b = common.GetBuf(pool)
+			cur = (*b).Buf
 			pos = 0
 		}
 		cur[pos] = byte(i % 256)
 		pos++
-		if pos == common.MAXBUF {
-			buf = append(buf, cur)
+		if pos == MAXBUF {
+			nxtBufs.Slices = append(nxtBufs.Slices, cur)
+			nxtBufs.Bufs = append(nxtBufs.Bufs, b)
 			cur = nil
+			b = nil
 		}
 	}
 	if cur != nil {
-		buf = append(buf, cur[0:pos])
+		nxtBufs.Slices = append(nxtBufs.Slices, cur[0:pos])
+		nxtBufs.Bufs = append(nxtBufs.Bufs, b)
 	}
-	return buf
+	return nxtBufs
 }
 
 func verifyHdr(hdr *nxthdr.NxtHdr) bool {
@@ -162,7 +170,7 @@ func verifyHdr(hdr *nxthdr.NxtHdr) bool {
 func verifyBytes(buf net.Buffers, size int) bool {
 	var b = 0
 	for i := 0; i < len(buf); i++ {
-		if len(buf[i]) > common.MAXBUF {
+		if len(buf[i]) > MAXBUF {
 			fmt.Println("Buflen toobig", len(buf[i]))
 			return false
 		}
@@ -189,7 +197,7 @@ func sendPkt(wsock common.Transport, testSize int) {
 	hdr := nxthdr.NxtHdr{}
 	hdr.Hdr = &nxthdr.NxtHdr_Onboard{Onboard: &onboard}
 	buf := generateBytes(testSize)
-	err := wsock.Write(&hdr, buf)
+	err := wsock.Write(&hdr, &buf)
 	if err != nil {
 		panic(err)
 	}
@@ -226,6 +234,7 @@ func burstTest(wsock common.Transport, burstSz int) {
 // Test different packet sizes, and also test bursting a bunch of packets
 // The tests are run bidirectional - from each end to the opposite end
 func Test1Pkts(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -240,12 +249,12 @@ func Test1Pkts(t *testing.T) {
 	go readStream(mainCtx, uuid.UUID{}, wsock)
 
 	sizeTest(wsock, []int{
-		1000, common.MAXBUF, common.MAXBUF + 1, 2 * common.MAXBUF,
-		2*common.MAXBUF + 1, 2*common.MAXBUF + 100, 4*common.MAXBUF + 123, 7*common.MAXBUF + 100},
+		1000, MAXBUF, MAXBUF + 1, 2 * MAXBUF,
+		2*MAXBUF + 1, 2*MAXBUF + 100, 4*MAXBUF + 123, 7*MAXBUF + 100},
 	)
 	sizeTest(serverStream[0], []int{
-		1000, common.MAXBUF, common.MAXBUF + 1, 2 * common.MAXBUF,
-		2*common.MAXBUF + 1, 2*common.MAXBUF + 100, 4*common.MAXBUF + 123, 7*common.MAXBUF + 100},
+		1000, MAXBUF, MAXBUF + 1, 2 * MAXBUF,
+		2*MAXBUF + 1, 2*MAXBUF + 100, 4*MAXBUF + 123, 7*MAXBUF + 100},
 	)
 	burstTest(wsock, 4096)
 	burstTest(serverStream[0], 4096)
@@ -275,6 +284,7 @@ func getStreamsLen(session *webSession) int {
 
 // Test ability to create and delete streams from the client side
 func Test2ClientStreams(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -345,7 +355,7 @@ func Test2ClientStreams(t *testing.T) {
 	// all streams are closed, now a read/write should return error
 	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
-		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err := streams[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -353,7 +363,7 @@ func Test2ClientStreams(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
-		err = serverStream[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err = serverStream[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -379,6 +389,7 @@ func Test2ClientStreams(t *testing.T) {
 
 // Test ability to create streams from the client side and delete them from server side
 func Test3ClientStreamServerClose(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -449,7 +460,7 @@ func Test3ClientStreamServerClose(t *testing.T) {
 	// all streams are closed, now a read/write should return error
 	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
-		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err := streams[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -457,7 +468,7 @@ func Test3ClientStreamServerClose(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
-		err = serverStream[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err = serverStream[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -499,6 +510,7 @@ func watchClientStreams(ctx context.Context, cChan chan common.NxtStream) {
 
 // Test ability to create and delete streams from the server side
 func Test4ServerStreams(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -579,7 +591,7 @@ func Test4ServerStreams(t *testing.T) {
 	// all streams are closed, now a read/write should return error
 	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
-		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err := streams[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -587,7 +599,7 @@ func Test4ServerStreams(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
-		err = clientStream[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err = clientStream[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -614,6 +626,7 @@ func Test4ServerStreams(t *testing.T) {
 // Test ability to create streams from the server side and delete them
 // from client side
 func Test5ServerStreamsClientClose(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	cChan := make(chan common.NxtStream)
 	sChan := make(chan common.NxtStream)
@@ -694,7 +707,7 @@ func Test5ServerStreamsClientClose(t *testing.T) {
 	// all streams are closed, now a read/write should return error
 	for i := 1; i < 10; i++ {
 		hdr := &nxthdr.NxtHdr{}
-		err := streams[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err := streams[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}
@@ -702,7 +715,7 @@ func Test5ServerStreamsClientClose(t *testing.T) {
 		if err == nil {
 			panic(i)
 		}
-		err = clientStream[i].Write(hdr, net.Buffers{[]byte{1, 2, 3}})
+		err = clientStream[i].Write(hdr, &common.NxtBufs{Slices: net.Buffers{[]byte{1, 2, 3}}})
 		if err == nil {
 			panic(i)
 		}

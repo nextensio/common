@@ -12,20 +12,24 @@ import (
 	"gitlab.com/nextensio/common/go/messages/nxthdr"
 )
 
+var pool common.NxtPool
+
+const MAXBUF = 2048 * 3
+
 // To try this proxy, do "go test" and then say the below for example
-// https_proxy="http://127.0.0.1:8080" curl -k https://googe.com
+// https_proxy="http://127.0.0.1:8080" curl -k https://google.com
 // Or just configure your browser to use 127.0.0.1:8080 as a proxy and
 // just browse
 func netToProxy(dest net.Conn, p common.Transport) {
 	for {
-		buf := make([]byte, common.MAXBUF)
-		n, err := dest.Read(buf)
+		b := common.GetBuf(pool)
+		n, err := dest.Read(b.Buf)
 		if err != nil {
 			fmt.Println("Error reading from dest", err)
 			p.Close()
 			return
 		}
-		e := p.Write(nil, net.Buffers{buf[:n]})
+		e := p.Write(nil, &common.NxtBufs{Slices: net.Buffers{b.Buf[:n]}, Bufs: []*common.NxtBuf{b}})
 		if e != nil {
 			fmt.Println("Error writing to proxy", e)
 			dest.Close()
@@ -58,7 +62,7 @@ func proxyToNet(p common.Transport) {
 			}
 			go netToProxy(dest, p)
 		}
-		for _, b := range buf {
+		for _, b := range buf.Slices {
 			_, err := dest.Write(b)
 			if err != nil {
 				fmt.Println("Error writing to dest", err)
@@ -69,9 +73,10 @@ func proxyToNet(p common.Transport) {
 	}
 }
 func TestProxy(t *testing.T) {
+	pool = common.NewPool(MAXBUF)
 	mainCtx := context.Background()
 	lg := log.New(os.Stdout, "test", 0)
-	p := NewListener(mainCtx, lg, 8080)
+	p := NewListener(mainCtx, lg, pool, 8080)
 	c := make(chan common.NxtStream)
 	go p.Listen(c)
 	for {

@@ -32,7 +32,7 @@ type NetConn struct {
 	server   bool
 	lg       *log.Logger
 	ctx      context.Context
-	parse    []byte
+	parse    *common.NxtBuf
 	parsed   chan struct{}
 	parseLen int
 	tls      tls
@@ -44,6 +44,7 @@ type NetConn struct {
 	conn     net.Conn
 	closed   bool
 	hdr      *nxthdr.NxtHdr
+	pool     common.NxtPool
 }
 
 const (
@@ -101,23 +102,24 @@ func parseHTTP(p *NetConn, prev int) bool {
 	// set of three bytes, check if they are \n\r\n
 	found := false
 	end := 0
+	parse := p.parse.Buf
 	for i := prev; i < p.parseLen; i++ {
 		if i-2 >= 0 {
-			if nlcrnl(p.parse[i-2 : i+1]) {
+			if nlcrnl(parse[i-2 : i+1]) {
 				found = true
 				end = i + 1
 				break
 			}
 		}
 		if i-1 >= 0 && i+1 < p.parseLen {
-			if nlcrnl(p.parse[i-1 : i+2]) {
+			if nlcrnl(parse[i-1 : i+2]) {
 				found = true
 				end = i + 2
 				break
 			}
 		}
 		if i+2 < p.parseLen {
-			if nlcrnl(p.parse[i : i+3]) {
+			if nlcrnl(parse[i : i+3]) {
 				found = true
 				end = i + 3
 				break
@@ -125,7 +127,7 @@ func parseHTTP(p *NetConn, prev int) bool {
 		}
 	}
 	if found {
-		reader := bufio.NewReader(bytes.NewReader(p.parse[0:end]))
+		reader := bufio.NewReader(bytes.NewReader(parse[0:end]))
 		req, err := http.ReadRequest(reader)
 		if err != nil {
 			p.http.notHttp = true
@@ -165,10 +167,11 @@ func parseTLS(p *NetConn) bool {
 	if p.parseLen < TLS_HDRLEN {
 		return false
 	}
-	t := int(p.parse[0])
-	maj := int(p.parse[1])
-	min := int(p.parse[2])
-	l := (int(p.parse[3]) << 8) | int(p.parse[4])
+	parse := p.parse.Buf
+	t := int(parse[0])
+	maj := int(parse[1])
+	min := int(parse[2])
+	l := (int(parse[3]) << 8) | int(parse[4])
 	// Check if type is client hello (0x16)
 	// Check if version is 0300 or 0301 or 0302
 	// Check if hello fits in one buffer. Again, like we discussed in tcpParse(), if
@@ -183,7 +186,7 @@ func parseTLS(p *NetConn) bool {
 	}
 
 	var hello = tlsx.ClientHello{}
-	err := hello.Unmarshall(p.parse[0:p.parseLen])
+	err := hello.Unmarshall(parse[0:p.parseLen])
 	if err != nil {
 		p.tls.notTls = true
 		return false
@@ -195,10 +198,11 @@ func parseTLS(p *NetConn) bool {
 }
 
 func tcpParse(p *NetConn) {
+	parse := p.parse.Buf
 	for {
 		// Cant wait for ever to decide if its plain text http or if its tls SNI
 		p.conn.SetReadDeadline(time.Now().Add(TCP_PARSE_TIMEOUT))
-		n, err := p.conn.Read(p.parse[p.parseLen:])
+		n, err := p.conn.Read(parse[p.parseLen:])
 		prev := p.parseLen
 		p.parseLen += n
 		if parseTLS(p) || parseHTTP(p, prev) {
@@ -209,7 +213,7 @@ func tcpParse(p *NetConn) {
 			// ip address as the service name
 			break
 		}
-		if p.parseLen == len(p.parse) {
+		if p.parseLen == len(parse) {
 			// well, I am not sure if we can expect the client hello/http headers to
 			// fit in one TCP_PARSE_SZ buffer. If there are esoteric hellos/headers that need
 			// more space, we will need to come back here and increase the size of
@@ -230,8 +234,8 @@ func tcpParse(p *NetConn) {
 	close(p.parsed)
 }
 
-func NewClient(ctx context.Context, lg *log.Logger, proto string, dest string, port uint32) *NetConn {
-	return &NetConn{lg: lg, ctx: ctx, proto: proto, dest: dest, port: port}
+func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, proto string, dest string, port uint32) *NetConn {
+	return &NetConn{lg: lg, ctx: ctx, pool: pool, proto: proto, dest: dest, port: port}
 }
 
 func (n *NetConn) Listen(c chan common.NxtStream) {
@@ -247,12 +251,12 @@ func (n *NetConn) Listen(c chan common.NxtStream) {
 			remote := strings.Split(conn.RemoteAddr().String(), ":")
 			port, e := strconv.Atoi(remote[1])
 			if e == nil {
-				parse := make([]byte, TCP_PARSE_SZ)
+				parse := common.GetBuf(n.pool)
 				parsed := make(chan struct{})
 				// We change the dest and port in the accepted stream to the "remote" values
 				// The local values are available in the parent NetConn n
 				stream := NetConn{
-					lg: n.lg, ctx: n.ctx, proto: n.proto, dest: remote[0], port: uint32(port),
+					lg: n.lg, ctx: n.ctx, pool: n.pool, proto: n.proto, dest: remote[0], port: uint32(port),
 					conn: conn, closed: false, server: true, parse: parse, parsed: parsed,
 				}
 				stream.hdr = makeHdr(&stream, n.dest, n.port)
@@ -309,11 +313,12 @@ func (n *NetConn) NewStream(hdr http.Header) common.Transport {
 	panic("NetConn has no streams!")
 }
 
-func (n *NetConn) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
+func (n *NetConn) Write(hdr *nxthdr.NxtHdr, buf *common.NxtBufs) *common.NxtError {
+	defer common.PutBufs(buf.Bufs)
 	if n.closed {
 		return common.Err(common.CONNECTION_ERR, nil)
 	}
-	for _, b := range buf {
+	for _, b := range buf.Slices {
 		// net.conn is assumed to be blocking, so it has to write all thats asked to be written
 		_, err := n.conn.Write(b)
 		if err != nil {
@@ -323,7 +328,7 @@ func (n *NetConn) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
 	return nil
 }
 
-func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
+func (n *NetConn) Read() (*nxthdr.NxtHdr, *common.NxtBufs, *common.NxtError) {
 	if n.closed {
 		return nil, nil, common.Err(common.CONNECTION_ERR, nil)
 	}
@@ -350,19 +355,22 @@ func (n *NetConn) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	if n.parseLen != 0 {
 		l := n.parseLen
 		n.parseLen = 0
-		buf := net.Buffers{n.parse[0:l]}
+		buf := net.Buffers{n.parse.Buf[0:l]}
+		retBuf := common.NxtBufs{Slices: buf, Bufs: []*common.NxtBuf{n.parse}}
 		n.parse = nil
-		return hdrP, buf, nil
+		return hdrP, &retBuf, nil
 	}
 
-	buf := make([]byte, common.MAXBUF)
-	r, err := n.conn.Read(buf[0:common.MAXBUF])
+	nxtBuf := common.GetBuf(n.pool)
+	buf := (*nxtBuf).Buf
+	r, err := n.conn.Read(buf)
 	if err != nil {
 		if err != io.EOF || r == 0 {
 			return nil, nil, common.Err(common.CONNECTION_ERR, err)
 		}
 	}
-	return hdrP, net.Buffers{buf[0:r]}, nil
+	retBuf := common.NxtBufs{Slices: net.Buffers{buf[:r]}, Bufs: []*common.NxtBuf{nxtBuf}}
+	return hdrP, &retBuf, nil
 }
 
 func (n *NetConn) SetReadDeadline(t time.Time) *common.NxtError {

@@ -39,13 +39,13 @@ import (
 
 type nxtData struct {
 	hdr  *nxthdr.NxtHdr
-	data net.Buffers
+	data *common.NxtBufs
 }
 
 type httpBody struct {
 	h      *HttpStream
 	txChan chan nxtData
-	bufs   net.Buffers
+	bufs   *common.NxtBufs
 	idx    int
 	off    int
 	once   bool
@@ -61,6 +61,7 @@ type httpBody struct {
 type HttpStream struct {
 	ctx           context.Context
 	lg            *log.Logger
+	pool          common.NxtPool
 	httpServer    *http.Server
 	serverIP      string
 	serverName    string
@@ -99,9 +100,9 @@ type Timing struct {
 	Rtt        uint64    `json:"rtt"`
 }
 
-func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []byte, port int, totThreads *int32) *HttpStream {
+func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, pvtKey []byte, pubKey []byte, port int, totThreads *int32) *HttpStream {
 	return &HttpStream{
-		ctx: ctx, lg: lg, pvtKey: pvtKey, pubKey: pubKey, port: port,
+		ctx: ctx, lg: lg, pool: pool, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		addr:       ":" + strconv.Itoa(port),
 		totThreads: totThreads,
 		server:     true,
@@ -109,9 +110,9 @@ func NewListener(ctx context.Context, lg *log.Logger, pvtKey []byte, pubKey []by
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
-func NewClient(ctx context.Context, lg *log.Logger, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, keepalive int, clocksync int) *HttpStream {
+func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, keepalive int, clocksync int) *HttpStream {
 	h := HttpStream{
-		ctx: ctx, lg: lg, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
+		ctx: ctx, lg: lg, pool: pool, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
 		streamClosed:  make(chan struct{}),
 		totThreads:    totThreads,
@@ -190,9 +191,10 @@ func setRtt(stream *HttpStream, rtt uint64) {
 func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 	for {
 		nbufs := make([][]byte, 0)
+		nxtBufs := make([]*common.NxtBuf, 0)
 		lenBytes := 0
 		hdr := &nxthdr.NxtHdr{}
-		buf := make([]byte, common.MAXBUF)
+		buf := common.GetBuf(stream.pool)
 
 		var totLen uint64 = 0
 		var tbytes int = 0
@@ -200,12 +202,12 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 		// encoded at the beginning of the packet, we dont know the size of the varint encoding,
 		// so we try to figure that out here.
 		// TODO: This can be more efficient without having to do as many reads. These reads
-		// wont really be system calls since the quic lib internally will have buffered this
+		// wont really be system calls since the http2 lib internally will have buffered this
 		// data and it will be a memcopy, but still we dont have to make as many Reads(). We
 		// can just read in say 3 bytes and see which byte has LSB 0 bit to figure out end of
 		// varint encoding
 		for {
-			_, err := r.Body.Read(buf[lenBytes : lenBytes+1])
+			_, err := r.Body.Read((*buf).Buf[lenBytes : lenBytes+1])
 			if err != nil {
 				stream.Close()
 				atomic.AddInt32(&stream.listener.nthreads, -1)
@@ -215,7 +217,7 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			lenBytes++
-			totLen, tbytes = binary.Uvarint(buf[0:lenBytes])
+			totLen, tbytes = binary.Uvarint((*buf).Buf[0:lenBytes])
 			if tbytes > 0 {
 				break
 			}
@@ -228,12 +230,12 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 		end := 0
 		for remaining := int(totLen); remaining > 0; {
 			// Can the remaining data fit in this one buffer ?
-			if remaining > len(buf[offset:]) {
-				end = len(buf)
+			if remaining > len((*buf).Buf[offset:]) {
+				end = len((*buf).Buf)
 			} else {
 				end = offset + remaining
 			}
-			n, err := r.Body.Read(buf[offset:end])
+			n, err := r.Body.Read((*buf).Buf[offset:end])
 			// io.EOF can have a nonzero number of bytes read which we have to process
 			if err != nil && err != io.EOF {
 				stream.Close()
@@ -255,9 +257,10 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if offset == end {
-				nbufs = append(nbufs, buf[0:end])
+				nbufs = append(nbufs, (*buf).Buf[0:end])
+				nxtBufs = append(nxtBufs, buf)
 				if remaining != 0 {
-					buf = make([]byte, common.MAXBUF)
+					buf = common.GetBuf(stream.pool)
 					offset = 0
 				}
 			}
@@ -292,6 +295,10 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 			retBuf = net.Buffers{nbufs[0][lenBytes:]}
 			retBuf = append(retBuf, nbufs[1:]...)
 		}
+		retData := common.NxtBufs{
+			Slices: retBuf,
+			Bufs:   nxtBufs,
+		}
 
 		setRtt(stream, hdr.Rtt)
 
@@ -300,7 +307,7 @@ func bodyRead(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
 			// Nothing to do, client sends it just to keep the session "warm"
 		default:
 			select {
-			case stream.rxData <- nxtData{hdr: hdr, data: retBuf}:
+			case stream.rxData <- nxtData{hdr: hdr, data: &retData}:
 			case <-stream.streamClosed:
 				atomic.AddInt32(&stream.listener.nthreads, -1)
 				if stream.totThreads != nil {
@@ -353,7 +360,7 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	}
 	rxData := make(chan nxtData)
 	stream := &HttpStream{
-		ctx: h.ctx, lg: h.lg, rxData: rxData, server: true, serverBody: r.Body,
+		ctx: h.ctx, lg: h.lg, pool: h.pool, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
 		totThreads: h.totThreads,
 	}
@@ -557,7 +564,7 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 
 func (b *httpBody) readData(data nxtData) error {
 	total := 0
-	for _, b := range data.data {
+	for _, b := range data.data.Slices {
 		total += len(b)
 	}
 	data.hdr.Rtt = b.h.Timing().Rtt
@@ -585,8 +592,8 @@ func (b *httpBody) readData(data nxtData) error {
 	copy(hdrs[0:], varint2[0:plen2])
 	copy(hdrs[plen2:], varint1[0:plen1])
 	copy(hdrs[plen2+plen1:], out)
-	newbuf := append(net.Buffers{hdrs}, data.data...)
-	b.bufs = newbuf
+	newbuf := append(net.Buffers{hdrs}, data.data.Slices...)
+	b.bufs = &common.NxtBufs{Slices: newbuf, Bufs: data.data.Bufs}
 	b.idx = 0
 	b.off = 0
 
@@ -622,7 +629,7 @@ func (b *httpBody) nxtWriteKeepalive() error {
 	copy(hdrs[0:], varint2[0:plen2])
 	copy(hdrs[plen2:], varint1[0:plen1])
 	copy(hdrs[plen2+plen1:], out)
-	b.bufs = net.Buffers{hdrs}
+	b.bufs = &common.NxtBufs{Slices: net.Buffers{hdrs}, Bufs: nil}
 	b.idx = 0
 	b.off = 0
 
@@ -682,7 +689,7 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 	total := 0
 	for {
 		avail := len(p[total:])
-		curbuf := b.bufs[b.idx][b.off:]
+		curbuf := (*b.bufs).Slices[b.idx][b.off:]
 		curlen := len(curbuf)
 		if avail > curlen {
 			copy(p[total:], curbuf[0:])
@@ -691,7 +698,8 @@ func (b *httpBody) Read(p []byte) (n int, err error) {
 			b.idx++
 			// Check if we have transmitted the entire frame, if so we exit
 			// and transmit the next frame in the next body read.
-			if b.idx == len(b.bufs) {
+			if b.idx == len((*b.bufs).Slices) {
+				common.PutBufs((*b.bufs).Bufs)
 				b.bufs = nil
 				break
 			}
@@ -773,7 +781,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		parent = h.parent
 	}
 	nh := HttpStream{
-		ctx: h.ctx, lg: h.lg, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
+		ctx: h.ctx, lg: h.lg, pool: h.pool, caCert: h.caCert, serverName: h.serverName, serverIP: h.serverIP, port: h.port,
 		requestHeader: hdr,
 		streamClosed:  make(chan struct{}),
 		totThreads:    h.totThreads,
@@ -792,7 +800,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 	return &nh
 }
 
-func (h *HttpStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
+func (h *HttpStream) Read() (*nxthdr.NxtHdr, *common.NxtBufs, *common.NxtError) {
 	if !h.server {
 		panic("http2 client is write only")
 	}
@@ -812,7 +820,7 @@ func (h *HttpStream) Read() (*nxthdr.NxtHdr, net.Buffers, *common.NxtError) {
 	}
 }
 
-func (h *HttpStream) Write(hdr *nxthdr.NxtHdr, buf net.Buffers) *common.NxtError {
+func (h *HttpStream) Write(hdr *nxthdr.NxtHdr, buf *common.NxtBufs) *common.NxtError {
 	if h.server {
 		panic("http2 server is read only")
 	}
