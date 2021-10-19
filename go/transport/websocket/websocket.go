@@ -315,17 +315,22 @@ func nxtWriteClockSync(stream *WebStream, serverTime uint64) *common.NxtError {
 // then we break the framing format on the wire. Hence make sure all validations
 // happen before writing onto the wire. The only error we should expect after writing to
 // the wire is some write error itself
+// NOTE NOTE: data.data can be nil, ie there can be a packet with just header and no data
 func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 
 	stream.session.wlock.Lock()
 	defer stream.session.wlock.Unlock()
-	defer common.PutBufs(data.data.Bufs)
+	if data.data != nil {
+		defer common.PutBufs(data.data.Bufs)
+	}
 
 	// This is what identifies us as a stream to the other end
 	data.hdr.Streamid = stream.stream
 	total := 0
-	for _, b := range data.data.Slices {
-		total += len(b)
+	if data.data != nil {
+		for _, b := range data.data.Slices {
+			total += len(b)
+		}
 	}
 	data.hdr.Datalen = uint32(total)
 
@@ -345,10 +350,12 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 	if err != nil {
 		return common.Err(common.CONNECTION_ERR, err)
 	}
-	for _, b := range data.data.Slices {
-		_, err = stream.session.conn.Write(b[0:])
-		if err != nil {
-			return common.Err(common.CONNECTION_ERR, err)
+	if data.data != nil {
+		for _, b := range data.data.Slices {
+			_, err = stream.session.conn.Write(b[0:])
+			if err != nil {
+				return common.Err(common.CONNECTION_ERR, err)
+			}
 		}
 	}
 

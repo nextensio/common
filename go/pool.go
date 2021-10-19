@@ -88,6 +88,9 @@ func PutBuf(buf *NxtBuf) {
 }
 
 func PutBufs(bufs []*NxtBuf) {
+	if bufs == nil {
+		return
+	}
 	for _, b := range bufs {
 		PutBuf(b)
 	}
