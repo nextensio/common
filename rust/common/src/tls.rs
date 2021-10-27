@@ -42,7 +42,7 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
     }
 
     let hs = &hs[CLIENT_HELLO_RANDOM_LEN..];
-    if hs.len() < 1 {
+    if hs.is_empty() {
         return None;
     }
 
@@ -66,7 +66,7 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
     }
 
     let hs = &hs[2 + ch.cipersuite_len as usize..];
-    if hs.len() < 1 {
+    if hs.is_empty() {
         return None;
     }
 
@@ -91,7 +91,7 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
 
     let mut hs = &hs[2..];
 
-    while hs.len() > 0 {
+    while !hs.is_empty() {
         if hs.len() < 4 {
             return None;
         }
@@ -120,7 +120,7 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
             }
 
             loop {
-                if data.len() <= 0 {
+                if data.is_empty() {
                     break;
                 }
                 let name_type = data[0];
@@ -140,5 +140,5 @@ pub fn parse_sni(payload: &[u8]) -> Option<String> {
             }
         }
     }
-    return None;
+    None
 }

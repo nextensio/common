@@ -44,10 +44,7 @@ impl NetConn {
 
 fn resolve_addr(dest_port: &str) -> Option<SocketAddr> {
     match dest_port.to_socket_addrs() {
-        Ok(mut addrs) => match addrs.next() {
-            Some(addr) => Some(addr),
-            _ => None,
-        },
+        Ok(mut addrs) => addrs.next(),
         Err(_) => None,
     }
 }
@@ -80,7 +77,7 @@ impl common::Transport for NetConn {
             socket.connect(addr)?;
             self.stream = Some(RawStream::Udp(socket));
         }
-        return Ok(());
+        Ok(())
     }
 
     fn new_stream(&mut self) -> u64 {
@@ -138,21 +135,19 @@ impl common::Transport for NetConn {
                         });
                     }
                     unsafe { buf.set_len(size) }
-                    return Ok((
+                    Ok((
                         0,
                         NxtBufs {
                             hdr: None,
                             bufs: vec![buf],
                             headroom: 0,
                         },
-                    ));
+                    ))
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    return Err(NxtError {
-                        code: EWOULDBLOCK,
-                        detail: "".to_string(),
-                    })
-                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Err(NxtError {
+                    code: EWOULDBLOCK,
+                    detail: "".to_string(),
+                }),
                 Err(e) => {
                     return Err(NxtError {
                         code: CONNECTION,
@@ -171,21 +166,19 @@ impl common::Transport for NetConn {
                         });
                     }
                     unsafe { buf.set_len(size) }
-                    return Ok((
+                    Ok((
                         0,
                         NxtBufs {
                             hdr: None,
                             bufs: vec![buf],
                             headroom: 0,
                         },
-                    ));
+                    ))
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    return Err(NxtError {
-                        code: EWOULDBLOCK,
-                        detail: "".to_string(),
-                    })
-                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Err(NxtError {
+                    code: EWOULDBLOCK,
+                    detail: "".to_string(),
+                }),
                 Err(e) => {
                     return Err(NxtError {
                         code: CONNECTION,

@@ -1,5 +1,5 @@
 use common::{
-    nxthdr::{nxt_hdr::Hdr, NxtClockSync, NxtHdr, NxtKeepalive},
+    nxthdr::{nxt_hdr::Hdr, NxtClockSync, NxtClose, NxtHdr, NxtKeepalive},
     varint_decode, varint_encode, varint_encode_len, NxtBufs, NxtErr,
     NxtErr::CONNECTION,
     NxtErr::ENOMEM,
@@ -61,6 +61,7 @@ pub struct WebSession {
     socket: Option<WSock>,
     request_headers: HashMap<String, String>,
     pub tcp_stream: Option<RawStream>,
+    pub gateway_ip: u32,
     close_pending: Vec<u64>,
     pkt_pool: Arc<Pool<Vec<u8>>>,
     tcp_pool: Arc<Pool<Vec<u8>>>,
@@ -105,6 +106,7 @@ impl WebSession {
             socket: None,
             request_headers,
             tcp_stream: None,
+            gateway_ip: 0,
             close_pending: Vec::new(),
             pkt_pool,
             tcp_pool,
@@ -138,7 +140,7 @@ impl WebSession {
         req.push_str("\r\n");
         if let Some(mut new) = common::pool_get(self.pkt_pool.clone()) {
             new.clear();
-            new.extend_from_slice(&req.as_bytes());
+            new.extend_from_slice(req.as_bytes());
             self.pending_tx_hdr = Some(new);
             self.pending_tx_offset = 0;
         } else {
@@ -171,10 +173,10 @@ impl WebSession {
                         });
                     }
                     self.line += size;
-                    if buf[0] == '\r' as u8 {
+                    if buf[0] == b'\r' {
                         self.cr = true;
                     }
-                    if buf[0] == '\n' as u8 {
+                    if buf[0] == b'\n' {
                         self.nl = true;
                         if self.cr && self.nl && (self.line == 2) {
                             self.upgraded = true;
@@ -238,10 +240,10 @@ impl WebSession {
             }
             Ok(())
         } else {
-            return Err(NxtError {
+            Err(NxtError {
                 code: CONNECTION,
                 detail: "".to_string(),
-            });
+            })
         }
     }
     // NOTE & TODO: There are two assumptions being made here - that the entire
@@ -293,7 +295,7 @@ impl WebSession {
                                     buf[i] = buf[hb + i];
                                 }
                                 self.rx_hdrlen = hl;
-                                self.pending_rx_offset = self.pending_rx_offset - hb;
+                                self.pending_rx_offset -= hb;
                                 if self.rx_hdrlen > buf.capacity() {
                                     return Err(NxtError {
                                         code: CONNECTION,
@@ -379,9 +381,9 @@ impl WebSession {
                     }
                 }
             }
-            return self.read_data();
+            self.read_data()
         } else {
-            return self.read_data();
+            self.read_data()
         }
     }
 }
@@ -392,7 +394,7 @@ fn has_varint(bytes: &[u8]) -> bool {
             return true;
         }
     }
-    return false;
+    false
 }
 
 fn retry_previous_pending(
@@ -436,7 +438,7 @@ fn retry_previous_pending(
         return write_data(socket, pending, pending_tx_data);
     }
 
-    return Ok(());
+    Ok(())
 }
 
 fn write_data(
@@ -477,7 +479,7 @@ fn write_data(
         }
     }
 
-    return Ok(());
+    Ok(())
 }
 
 fn write_header(
@@ -513,188 +515,12 @@ fn write_header(
             detail: "".to_string(),
         });
     }
-    return retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data);
+    retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data)
 }
 
 fn close_all_streams(socket: &mut WSock, streams: &mut HashMap<u64, WebStream>) {
     socket.shutdown().ok();
     streams.clear();
-}
-
-fn send_close(
-    pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
-    pending_tx_offset: &mut usize,
-    pending_tx_data: &mut Option<NxtBufs>,
-    close_pending: &mut Vec<u64>,
-    socket: &mut WSock,
-    streams: &mut HashMap<u64, WebStream>,
-    stream: u64,
-    pkt_pool: &Arc<Pool<Vec<u8>>>,
-) -> usize {
-    let mut hdr = NxtHdr::default();
-    hdr.streamid = stream;
-    hdr.datalen = 0;
-
-    // Already some header is waiting to be sent, so we just have to wait till thats sent,
-    // give it a retry now
-    match retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data) {
-        Ok(_) => {}
-        Err(e) => match e.code {
-            EWOULDBLOCK => {
-                close_pending.push(stream);
-                return 1;
-            }
-            _ => {
-                close_all_streams(socket, streams);
-                return 2;
-            }
-        },
-    }
-
-    match write_header(
-        socket,
-        &mut hdr,
-        pending_tx_hdr,
-        pending_tx_offset,
-        pending_tx_data,
-        &pkt_pool,
-    ) {
-        Ok(_) => return 0,
-        Err(e) => match e.code {
-            EWOULDBLOCK => {
-                // The data has been put into pending_tx_hdr already
-                return 1;
-            }
-            ENOMEM => {
-                // The data could not get into pending_tx_hdr, add it back to close_pending list
-                close_pending.push(stream);
-                return 1;
-            }
-            _ => {
-                close_all_streams(socket, streams);
-                return 2;
-            }
-        },
-    }
-}
-
-fn send_clock_sync(
-    pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
-    pending_tx_offset: &mut usize,
-    pending_tx_data: &mut Option<NxtBufs>,
-    socket: &mut WSock,
-    streams: &mut HashMap<u64, WebStream>,
-    stream: u64,
-    pkt_pool: &Arc<Pool<Vec<u8>>>,
-    server_time: u64,
-) {
-    let mut clock = NxtClockSync::default();
-    clock.server_time = server_time;
-    let mut hdr = NxtHdr::default();
-    hdr.hdr = Some(Hdr::Sync(clock));
-    hdr.streamid = stream;
-    hdr.datalen = 0;
-
-    // Already some header is waiting to be sent, so we just have to wait till thats sent,
-    // give it a retry now
-    match retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data) {
-        Ok(_) => {}
-        Err(e) => match e.code {
-            EWOULDBLOCK => {
-                // Clock sync will be periodically retried
-                return;
-            }
-            _ => {
-                close_all_streams(socket, streams);
-                return;
-            }
-        },
-    }
-
-    match write_header(
-        socket,
-        &mut hdr,
-        pending_tx_hdr,
-        pending_tx_offset,
-        pending_tx_data,
-        &pkt_pool,
-    ) {
-        Ok(_) => return,
-        Err(e) => match e.code {
-            EWOULDBLOCK => {
-                // The data has been put into pending_tx_hdr already
-                return;
-            }
-            ENOMEM => {
-                // The data could not get into pending_tx_hdr, Clock sync will be periodically retried
-                return;
-            }
-            _ => {
-                close_all_streams(socket, streams);
-                return;
-            }
-        },
-    }
-}
-
-fn send_keep_alive(
-    pending_tx_hdr: &mut Option<Reusable<Vec<u8>>>,
-    pending_tx_offset: &mut usize,
-    pending_tx_data: &mut Option<NxtBufs>,
-    socket: &mut WSock,
-    streams: &mut HashMap<u64, WebStream>,
-    stream: u64,
-    pkt_pool: &Arc<Pool<Vec<u8>>>,
-) {
-    let keep = NxtKeepalive::default();
-    let mut hdr = NxtHdr::default();
-    hdr.hdr = Some(Hdr::Keepalive(keep));
-    hdr.streamid = stream;
-    hdr.datalen = 0;
-
-    // Already some header is waiting to be sent, so we just have to wait till thats sent,
-    // give it a retry now
-    match retry_previous_pending(socket, pending_tx_hdr, pending_tx_offset, pending_tx_data) {
-        Ok(_) => {}
-        Err(e) => match e.code {
-            EWOULDBLOCK => {
-                // keep alive will be periodically retried
-                // TODO: This is not exactly great because this will be considered as a "lost keepalive"
-                // by the other end. We should have some means of retry, but that just complicates things.
-                // We will have to keep track that we need to send a keepalive next time etc..
-                return;
-            }
-            _ => {
-                close_all_streams(socket, streams);
-                return;
-            }
-        },
-    }
-
-    match write_header(
-        socket,
-        &mut hdr,
-        pending_tx_hdr,
-        pending_tx_offset,
-        pending_tx_data,
-        &pkt_pool,
-    ) {
-        Ok(_) => return,
-        Err(e) => match e.code {
-            EWOULDBLOCK => {
-                // The data has been put into pending_tx_hdr already
-                return;
-            }
-            ENOMEM => {
-                // The data could not get into pending_tx_hdr, Keepalive will be periodically retried
-                return;
-            }
-            _ => {
-                close_all_streams(socket, streams);
-                return;
-            }
-        },
-    }
 }
 
 #[cfg(not(target_vendor = "apple"))]
@@ -711,7 +537,7 @@ fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
     let mut tls = TlsConnector::builder();
     tls.add_root_certificate(cert);
 
-    return Ok(tls);
+    Ok(tls)
 }
 
 // See the rust native-tls crate src/imp/security_framework.rs from_pem().
@@ -725,6 +551,182 @@ fn tls_with_cert(ca_cert: &[u8]) -> Result<TlsConnectorBuilder, NxtError> {
     let mut tls = TlsConnector::builder();
 
     return Ok(tls);
+}
+
+enum CloseResult {
+    Ok,
+    Block,
+    Err,
+}
+
+impl WebSession {
+    fn send_close(&mut self, stream: u64) -> CloseResult {
+        let socket = self.socket.as_mut().unwrap();
+        let mut hdr = common::nxthdr::NxtHdr {
+            hdr: Some(Hdr::Close(NxtClose::default())),
+            streamid: stream,
+            datalen: 0,
+            ..Default::default()
+        };
+
+        // Already some header is waiting to be sent, so we just have to wait till thats sent,
+        // give it a retry now
+        match retry_previous_pending(
+            socket,
+            &mut self.pending_tx_hdr,
+            &mut self.pending_tx_offset,
+            &mut self.pending_tx_data,
+        ) {
+            Ok(_) => {}
+            Err(e) => match e.code {
+                EWOULDBLOCK => {
+                    self.close_pending.push(stream);
+                    return CloseResult::Block;
+                }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                    return CloseResult::Err;
+                }
+            },
+        }
+
+        match write_header(
+            socket,
+            &mut hdr,
+            &mut self.pending_tx_hdr,
+            &mut self.pending_tx_offset,
+            &mut self.pending_tx_data,
+            &self.pkt_pool,
+        ) {
+            Ok(_) => CloseResult::Ok,
+            Err(e) => match e.code {
+                EWOULDBLOCK => {
+                    // The data has been put into pending_tx_hdr already
+                    CloseResult::Block
+                }
+                ENOMEM => {
+                    // The data could not get into pending_tx_hdr, add it back to close_pending list
+                    self.close_pending.push(stream);
+                    CloseResult::Block
+                }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                    CloseResult::Err
+                }
+            },
+        }
+    }
+
+    fn send_keep_alive(&mut self, stream: u64) {
+        let socket = self.socket.as_mut().unwrap();
+        let keep = NxtKeepalive::default();
+        let mut hdr = common::nxthdr::NxtHdr {
+            hdr: Some(Hdr::Keepalive(keep)),
+            streamid: stream,
+            datalen: 0,
+            ..Default::default()
+        };
+
+        // Already some header is waiting to be sent, so we just have to wait till thats sent,
+        // give it a retry now
+        match retry_previous_pending(
+            socket,
+            &mut self.pending_tx_hdr,
+            &mut self.pending_tx_offset,
+            &mut self.pending_tx_data,
+        ) {
+            Ok(_) => {}
+            Err(e) => match e.code {
+                EWOULDBLOCK => {
+                    // keep alive will be periodically retried
+                    // TODO: This is not exactly great because this will be considered as a "lost keepalive"
+                    // by the other end. We should have some means of retry, but that just complicates things.
+                    // We will have to keep track that we need to send a keepalive next time etc..
+                    return;
+                }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                    return;
+                }
+            },
+        }
+
+        match write_header(
+            socket,
+            &mut hdr,
+            &mut self.pending_tx_hdr,
+            &mut self.pending_tx_offset,
+            &mut self.pending_tx_data,
+            &self.pkt_pool,
+        ) {
+            Ok(_) => {}
+            Err(e) => match e.code {
+                EWOULDBLOCK => {
+                    // The data has been put into pending_tx_hdr already
+                }
+                ENOMEM => {
+                    // The data could not get into pending_tx_hdr, Keepalive will be periodically retried
+                }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                }
+            },
+        }
+    }
+
+    fn send_clock_sync(&mut self, stream: u64, server_time: u64) {
+        let socket = self.socket.as_mut().unwrap();
+        let clock = NxtClockSync { server_time };
+        let mut hdr = common::nxthdr::NxtHdr {
+            hdr: Some(Hdr::Sync(clock)),
+            streamid: stream,
+            datalen: 0,
+            ..Default::default()
+        };
+
+        // Already some header is waiting to be sent, so we just have to wait till thats sent,
+        // give it a retry now
+        match retry_previous_pending(
+            socket,
+            &mut self.pending_tx_hdr,
+            &mut self.pending_tx_offset,
+            &mut self.pending_tx_data,
+        ) {
+            Ok(_) => {}
+            Err(e) => match e.code {
+                EWOULDBLOCK => {
+                    // Clock sync will be periodically retried
+                    return;
+                }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                    return;
+                }
+            },
+        }
+
+        match write_header(
+            socket,
+            &mut hdr,
+            &mut self.pending_tx_hdr,
+            &mut self.pending_tx_offset,
+            &mut self.pending_tx_data,
+            &self.pkt_pool,
+        ) {
+            Ok(_) => {}
+            Err(e) => match e.code {
+                EWOULDBLOCK => {
+                    // The data has been put into pending_tx_hdr already
+                }
+                ENOMEM => {
+                    // The data could not get into pending_tx_hdr, Clock sync will be periodically retried
+                }
+                _ => {
+                    close_all_streams(socket, &mut self.streams);
+                }
+            },
+        }
+    }
 }
 
 impl common::Transport for WebSession {
@@ -749,9 +751,10 @@ impl common::Transport for WebSession {
             }
         }
         let mut index = -1;
-        for i in 0..server.len() {
-            match server[i] {
-                SocketAddr::V4(_) => {
+        for (i, s) in server.iter().enumerate() {
+            match s {
+                SocketAddr::V4(ip) => {
+                    self.gateway_ip = common::as_u32_be(&ip.ip().octets());
                     index = i as isize;
                     break;
                 }
@@ -780,7 +783,7 @@ impl common::Transport for WebSession {
         socket.connect(&addr.into())?;
         let stream = TcpStream::from(socket);
         if !self.dialed {
-            if self.ca_cert.len() != 0 {
+            if !self.ca_cert.is_empty() {
                 let tls = match tls_with_cert(&self.ca_cert) {
                     Err(e) => return Err(e),
                     Ok(t) => t,
@@ -803,7 +806,7 @@ impl common::Transport for WebSession {
             stream.set_nonblocking(true)?;
             self.tcp_stream = Some(RawStream::Tcp(mio::net::TcpStream::from_std(stream)));
             self.dialed = true;
-            return self.write_upgrade();
+            self.write_upgrade()
         } else {
             return retry_previous_pending(
                 self.socket.as_mut().unwrap(),
@@ -821,7 +824,7 @@ impl common::Transport for WebSession {
         if self.server {
             sid = 2 * sid + 1;
         } else {
-            sid = 2 * sid;
+            sid *= 2;
         }
         let stream = WebStream {};
         self.streams.insert(sid, stream);
@@ -837,30 +840,20 @@ impl common::Transport for WebSession {
                 // closing stream 0 closes the entire connection
                 close_all_streams(socket, &mut self.streams);
             } else {
-                match send_close(
-                    &mut self.pending_tx_hdr,
-                    &mut self.pending_tx_offset,
-                    &mut self.pending_tx_data,
-                    &mut self.close_pending,
-                    socket,
-                    &mut self.streams,
-                    stream,
-                    &self.pkt_pool.clone(),
-                ) {
-                    0 => return Ok(()),
-                    1 => {
+                match self.send_close(stream) {
+                    CloseResult::Ok => return Ok(()),
+                    CloseResult::Block => {
                         return Err(NxtError {
                             code: NxtErr::EWOULDBLOCK,
                             detail: "pending send close".to_string(),
                         });
                     }
-                    2 => {
+                    CloseResult::Err => {
                         return Err(NxtError {
                             code: NxtErr::CONNECTION,
                             detail: "".to_string(),
                         });
                     }
-                    _ => panic!("Unexpected return code"),
                 }
             }
         }
@@ -891,87 +884,62 @@ impl common::Transport for WebSession {
             },
         }
 
-        let socket = self.socket.as_mut().unwrap();
         let hdr = self.pending_rx_hdr.take().unwrap();
         let buf = self.pending_rx_data.take().unwrap();
         match hdr.hdr.as_ref().unwrap() {
             Hdr::Keepalive(_) => {
-                send_keep_alive(
-                    &mut self.pending_tx_hdr,
-                    &mut self.pending_tx_offset,
-                    &mut self.pending_tx_data,
-                    socket,
-                    &mut self.streams,
-                    hdr.streamid,
-                    &self.pkt_pool.clone(),
-                );
-                return Ok((
+                self.send_keep_alive(hdr.streamid);
+                Ok((
                     hdr.streamid,
                     NxtBufs {
                         hdr: Some(hdr),
                         bufs: vec![],
                         headroom: 0,
                     },
-                ));
+                ))
             }
             Hdr::Sync(clock) => {
-                send_clock_sync(
-                    &mut self.pending_tx_hdr,
-                    &mut self.pending_tx_offset,
-                    &mut self.pending_tx_data,
-                    socket,
-                    &mut self.streams,
-                    hdr.streamid,
-                    &self.pkt_pool.clone(),
-                    clock.server_time,
-                );
-                return Ok((
+                self.send_clock_sync(hdr.streamid, clock.server_time);
+                Ok((
                     hdr.streamid,
                     NxtBufs {
                         hdr: Some(hdr),
                         bufs: vec![],
                         headroom: 0,
                     },
-                ));
+                ))
             }
             Hdr::Close(_) => {
                 if self.streams.contains_key(&hdr.streamid) {
-                    send_close(
-                        &mut self.pending_tx_hdr,
-                        &mut self.pending_tx_offset,
-                        &mut self.pending_tx_data,
-                        &mut self.close_pending,
-                        socket,
-                        &mut self.streams,
-                        hdr.streamid,
-                        &self.pkt_pool.clone(),
-                    );
+                    // Well, not sure if we should queue up this close if
+                    // the send close returns eblock etc.. and complicate things,
+                    // because the other end anyways cleans up the streamid after a timeout.
+                    self.send_close(hdr.streamid);
                     self.streams.remove(&hdr.streamid);
                 }
-                return Ok((
+                Ok((
                     hdr.streamid,
                     NxtBufs {
                         hdr: Some(hdr),
                         bufs: vec![],
                         headroom: 0,
                     },
-                ));
+                ))
             }
             _ => {
                 // Whatever is unknown just pass it onto the application, and the expectation
                 // is that the application will NOT barf on seeing an unknown type
-                if !self.streams.contains_key(&hdr.streamid) {
-                    let stream = WebStream {};
-                    self.streams.insert(hdr.streamid, stream);
-                }
-                return Ok((
+                self.streams
+                    .entry(hdr.streamid)
+                    .or_insert_with(|| WebStream {});
+                Ok((
                     hdr.streamid,
                     NxtBufs {
                         hdr: Some(hdr),
                         bufs: vec![buf],
                         headroom: 0,
                     },
-                ));
+                ))
             }
         }
     }
@@ -998,24 +966,14 @@ impl common::Transport for WebSession {
                 },
             ));
         }
-        let socket = self.socket.as_mut().unwrap();
 
         // There might be some pending stream close messages that we have to retry, this
         // is probably not the ideal place to retry this, but we dont want to expose to
         // the user another api to retry pending messages, hence doing it here
         while let Some(s) = self.close_pending.pop() {
-            match send_close(
-                &mut self.pending_tx_hdr,
-                &mut self.pending_tx_offset,
-                &mut self.pending_tx_data,
-                &mut self.close_pending,
-                socket,
-                &mut self.streams,
-                s,
-                &self.pkt_pool.clone(),
-            ) {
-                0 => (),
-                1 => {
+            match self.send_close(s) {
+                CloseResult::Ok => (),
+                CloseResult::Block => {
                     return Err((
                         Some(data),
                         NxtError {
@@ -1024,7 +982,7 @@ impl common::Transport for WebSession {
                         },
                     ));
                 }
-                2 => {
+                CloseResult::Err => {
                     return Err((
                         None,
                         NxtError {
@@ -1033,10 +991,10 @@ impl common::Transport for WebSession {
                         },
                     ));
                 }
-                _ => panic!("Unexpected return code"),
             }
         }
 
+        let socket = self.socket.as_mut().unwrap();
         // Already some header is waiting to be sent, so we just have to wait till thats sent,
         // give it a retry now
         match retry_previous_pending(
@@ -1125,14 +1083,12 @@ impl common::Transport for WebSession {
         }
 
         match write_data(socket, data, &mut self.pending_tx_data) {
-            Ok(_) => {
-                return Ok(());
-            }
+            Ok(_) => Ok(()),
             Err(e) => match e.code {
                 EWOULDBLOCK => {
                     // Returning ewouldblock will ensure that we are called again with
                     // empty data, so we will be 'driven' to complete what we queue here
-                    return Err((
+                    Err((
                         Some(NxtBufs {
                             hdr: None,
                             bufs: vec![],
@@ -1142,7 +1098,7 @@ impl common::Transport for WebSession {
                             code: NxtErr::EWOULDBLOCK,
                             detail: "".to_string(),
                         },
-                    ));
+                    ))
                 }
                 _ => {
                     return Err((

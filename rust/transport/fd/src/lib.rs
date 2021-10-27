@@ -75,12 +75,10 @@ impl common::Transport for Fd {
                 -1 => {
                     let e = std::io::Error::last_os_error();
                     match e.kind() {
-                        std::io::ErrorKind::WouldBlock => {
-                            return Err(NxtError {
-                                code: NxtErr::EWOULDBLOCK,
-                                detail: "".to_string(),
-                            });
-                        }
+                        std::io::ErrorKind::WouldBlock => Err(NxtError {
+                            code: NxtErr::EWOULDBLOCK,
+                            detail: "".to_string(),
+                        }),
                         _ => {
                             self.close(0).ok();
                             return Err(NxtError {
@@ -196,7 +194,7 @@ impl common::Transport for Fd {
             // libc::write is over with
             drop(dcloned);
         }
-        return Ok(());
+        Ok(())
     }
 
     fn event_register(
