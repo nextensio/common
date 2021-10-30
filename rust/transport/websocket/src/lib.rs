@@ -78,6 +78,7 @@ pub struct WebSession {
     cr: bool,
     nl: bool,
     bind_ip: u32,
+    gateway_input: u32,
 }
 
 struct WebStream {}
@@ -91,6 +92,7 @@ impl WebSession {
         pkt_pool: Arc<Pool<Vec<u8>>>,
         tcp_pool: Arc<Pool<Vec<u8>>>,
         bind_ip: u32,
+        gateway_input: u32,
     ) -> WebSession {
         let stream = WebStream {};
         let mut streams = HashMap::new();
@@ -123,6 +125,7 @@ impl WebSession {
             cr: false,
             nl: false,
             bind_ip,
+            gateway_input,
         }
     }
 
@@ -740,36 +743,48 @@ impl common::Transport for WebSession {
         let bind_ip = SocketAddr::new(IpAddr::V4(bip), 0);
         let svr = format!("{}:{}", self.server_name, self.port);
         let server: Vec<SocketAddr>;
-        let resolve = svr.to_socket_addrs();
-        match resolve {
-            Ok(sock_addr) => server = sock_addr.collect(),
-            Err(e) => {
+        let mut index = -1;
+        if self.gateway_input == 0 {
+            let resolve = svr.to_socket_addrs();
+            match resolve {
+                Ok(sock_addr) => server = sock_addr.collect(),
+                Err(e) => {
+                    return Err(NxtError {
+                        code: NxtErr::CONNECTION,
+                        detail: format!("{}: {}", svr, e),
+                    })
+                }
+            }
+            for (i, s) in server.iter().enumerate() {
+                match s {
+                    SocketAddr::V4(ip) => {
+                        self.gateway_ip = common::as_u32_be(&ip.ip().octets());
+                        index = i as isize;
+                        break;
+                    }
+                    _ => continue,
+                }
+            }
+            if index == -1 {
                 return Err(NxtError {
                     code: NxtErr::CONNECTION,
-                    detail: format!("{}: {}", svr, e),
-                })
+                    detail: format!(
+                        "{}: {}",
+                        svr,
+                        "unable to resolve dns for gateway".to_string()
+                    ),
+                });
             }
-        }
-        let mut index = -1;
-        for (i, s) in server.iter().enumerate() {
-            match s {
-                SocketAddr::V4(ip) => {
-                    self.gateway_ip = common::as_u32_be(&ip.ip().octets());
-                    index = i as isize;
-                    break;
-                }
-                _ => continue,
-            }
-        }
-        if index == -1 {
-            return Err(NxtError {
-                code: NxtErr::CONNECTION,
-                detail: format!(
-                    "{}: {}",
-                    svr,
-                    "unable to resolve dns for gateway".to_string()
-                ),
-            });
+        } else {
+            let ip0: u8 = (self.gateway_input >> 24) as u8;
+            let ip1: u8 = (self.gateway_input >> 16) as u8;
+            let ip2: u8 = (self.gateway_input >> 8) as u8;
+            let ip3: u8 = (self.gateway_input & 0xFF) as u8;
+            server = vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(ip0, ip1, ip2, ip3)),
+                0,
+            )];
+            index = 0;
         }
         let addr: SocketAddr = server[index as usize];
 
