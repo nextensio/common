@@ -782,7 +782,7 @@ impl common::Transport for WebSession {
             let ip3: u8 = (self.gateway_input & 0xFF) as u8;
             server = vec![SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(ip0, ip1, ip2, ip3)),
-                self.port,
+                self.port as u16,
             )];
             index = 0;
             self.gateway_ip = self.gateway_input;
