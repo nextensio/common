@@ -7,7 +7,6 @@ members = [
     "transport/webproxy",
     "transport/dummy",
     "transport/netconn",
-    "transport/winpipe",
 ]
 
 resolver = "2"

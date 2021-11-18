@@ -315,17 +315,22 @@ func nxtWriteClockSync(stream *WebStream, serverTime uint64) *common.NxtError {
 // then we break the framing format on the wire. Hence make sure all validations
 // happen before writing onto the wire. The only error we should expect after writing to
 // the wire is some write error itself
+// NOTE NOTE: data.data can be nil, ie there can be a packet with just header and no data
 func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 
 	stream.session.wlock.Lock()
 	defer stream.session.wlock.Unlock()
-	defer common.PutBufs(data.data.Bufs)
+	if data.data != nil {
+		defer common.PutBufs(data.data.Bufs)
+	}
 
 	// This is what identifies us as a stream to the other end
 	data.hdr.Streamid = stream.stream
 	total := 0
-	for _, b := range data.data.Slices {
-		total += len(b)
+	if data.data != nil {
+		for _, b := range data.data.Slices {
+			total += len(b)
+		}
 	}
 	data.hdr.Datalen = uint32(total)
 
@@ -345,10 +350,12 @@ func nxtWriteData(stream *WebStream, data nxtData) *common.NxtError {
 	if err != nil {
 		return common.Err(common.CONNECTION_ERR, err)
 	}
-	for _, b := range data.data.Slices {
-		_, err = stream.session.conn.Write(b[0:])
-		if err != nil {
-			return common.Err(common.CONNECTION_ERR, err)
+	if data.data != nil {
+		for _, b := range data.data.Slices {
+			_, err = stream.session.conn.Write(b[0:])
+			if err != nil {
+				return common.Err(common.CONNECTION_ERR, err)
+			}
 		}
 	}
 
@@ -648,6 +655,26 @@ func sessionRead(ctx context.Context, lg *log.Logger, session *webSession, c cha
 	}
 }
 
+// The close-protocol is that we send a message to the other end saying we are closing,
+// the other end is supposed to get that message and stop sending any more messages and
+// send us back a close message - so we "know" that the session sid entry can be removed
+// If we dont follow that protocol and remove the sid immediately, the next pending packet
+// from the other end can end up creating the stream/flow again. Now if the other end close
+// message doesnt reach us (the other end might not retry the response close if it fails),
+// we still need to cleanup  the sid after some timeout.
+func closeClean(session *webSession, sid uint64) {
+	time.Sleep(10 * time.Second)
+	session.slock.Lock()
+	delete(session.streams, sid)
+	session.slock.Unlock()
+
+	if sid == 0 {
+		// stream 0 represents the session itself, if stream 0 is closed, then entire session is closed
+		closeAllStreams(session)
+		sessionClose(session)
+	}
+}
+
 func streamWrite(h *WebStream) {
 	// 100 years, wish there was some time value for-ever-infinitys
 	keepalive := 876000 * time.Hour
@@ -710,6 +737,7 @@ func streamWrite(h *WebStream) {
 				h.closed = true
 				// Send a close message to the other end, this is the last message on this channel
 				nxtWriteClose(h)
+				go closeClean(h.session, h.stream)
 				// Wakeup all writers hung on txData channel
 				close(h.streamClosed)
 			}

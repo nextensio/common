@@ -28,19 +28,19 @@ impl common::Transport for Dummy {
     }
 
     fn read(&mut self) -> Result<(u64, NxtBufs), NxtError> {
-        return Err(NxtError {
+        Err(NxtError {
             code: NxtErr::CONNECTION,
             detail: "dummy trait".to_string(),
-        });
+        })
     }
 
     fn write(&mut self, _: u64, _: NxtBufs) -> Result<(), (Option<NxtBufs>, NxtError)> {
-        return Err((
+        Err((
             None,
             NxtError {
                 code: NxtErr::CONNECTION,
                 detail: "dummy trait".to_string(),
             },
-        ));
+        ))
     }
 }

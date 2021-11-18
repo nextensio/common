@@ -25,8 +25,10 @@ pub struct WebProxy {
 // blocking mode as of now.
 impl WebProxy {
     pub fn new_client(port: usize, pool: Arc<Pool<Vec<u8>>>) -> WebProxy {
-        let mut key = FlowV4Key::default();
-        key.sport = port as u16;
+        let key = common::FlowV4Key {
+            sport: port as u16,
+            ..Default::default()
+        };
         WebProxy {
             closed: false,
             key,
@@ -86,7 +88,7 @@ impl common::Transport for WebProxy {
                                 dport: 0,
                                 proto: common::TCP,
                             };
-                            return Ok(Box::new(WebProxy {
+                            Ok(Box::new(WebProxy {
                                 closed: false,
                                 key,
                                 connect_buf,
@@ -94,25 +96,23 @@ impl common::Transport for WebProxy {
                                 socket: Some(RawStream::Tcp(stream)),
                                 buf_off: 0,
                                 pool: self.pool.clone(),
-                            }));
+                            }))
                         }
                         _ => {
                             // We only support ipv4 as of today. The stream will get closed as its
                             // unused/dropped after this return
-                            return Err(NxtError {
+                            Err(NxtError {
                                 code: EWOULDBLOCK,
                                 detail: "".to_string(),
-                            });
+                            })
                         }
                     }
                 }
 
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    return Err(NxtError {
-                        code: EWOULDBLOCK,
-                        detail: "".to_string(),
-                    })
-                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Err(NxtError {
+                    code: EWOULDBLOCK,
+                    detail: "".to_string(),
+                }),
                 Err(e) => {
                     return Err(NxtError {
                         code: CONNECTION,
@@ -174,7 +174,7 @@ impl common::Transport for WebProxy {
                             let crnl = parse_crnl(&buf[0..self.buf_off]);
                             if crnl != 0 {
                                 let (method, dport, dip) = parse_host(&buf[0..crnl]);
-                                if dport == 0 || dip == "" {
+                                if dport == 0 || dip.is_empty() {
                                     return Err(NxtError {
                                         code: NxtErr::CONNECTION,
                                         detail: "Bad Connect".to_string(),
@@ -190,7 +190,7 @@ impl common::Transport for WebProxy {
                                     self.connect_buf = Some(buf);
                                     self.buf_off = 0;
                                     // The connect request is an internal payload thats consumed here
-                                    return Ok((
+                                    Ok((
                                         0,
                                         NxtBufs {
                                             // The very first time we detect the destination, we return an nxthdr
@@ -199,12 +199,12 @@ impl common::Transport for WebProxy {
                                             bufs: vec![],
                                             headroom: 0,
                                         },
-                                    ));
+                                    ))
                                 } else if method == "GET" {
                                     unsafe { buf.set_len(crnl) }
                                     // The GET request is given back to the reader who will then transport it to
                                     // the final destination
-                                    return Ok((
+                                    Ok((
                                         0,
                                         NxtBufs {
                                             // The very first time we detect the destination, we return an nxthdr
@@ -213,45 +213,43 @@ impl common::Transport for WebProxy {
                                             bufs: vec![buf],
                                             headroom: 0,
                                         },
-                                    ));
+                                    ))
                                 } else {
-                                    return Err(NxtError {
+                                    Err(NxtError {
                                         code: CONNECTION,
                                         detail: "Unsupported method".to_string(),
-                                    });
+                                    })
                                 }
                             } else if self.buf_off < buf.capacity() {
                                 // we have not yet received the entire CONNECT request, keep trying
                                 self.connect_buf = Some(buf);
-                                return Err(NxtError {
+                                Err(NxtError {
                                     code: EWOULDBLOCK,
                                     detail: "".to_string(),
-                                });
+                                })
                             } else {
                                 // We dont expect connect req to need so much space!
-                                return Err(NxtError {
+                                Err(NxtError {
                                     code: CONNECTION,
                                     detail: "".to_string(),
-                                });
+                                })
                             }
                         } else {
                             unsafe { buf.set_len(len) }
-                            return Ok((
+                            Ok((
                                 0,
                                 NxtBufs {
                                     hdr: None,
                                     bufs: vec![buf],
                                     headroom: 0,
                                 },
-                            ));
+                            ))
                         }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        return Err(NxtError {
-                            code: EWOULDBLOCK,
-                            detail: "".to_string(),
-                        })
-                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Err(NxtError {
+                        code: EWOULDBLOCK,
+                        detail: "".to_string(),
+                    }),
                     Err(e) => {
                         return Err(NxtError {
                             code: CONNECTION,

@@ -10,7 +10,7 @@ use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 pub mod nxthdr {
     include!(concat!(env!("OUT_DIR"), "/nxthdr.rs"));
 }
-use nxthdr::{nxt_hdr::Hdr, NxtFlow, NxtHdr};
+use nxthdr::{nxt_hdr::Hdr, NxtHdr};
 
 static MAXBUF: AtomicUsize = AtomicUsize::new(2048 * 3);
 // There is not a lot of value to having a headroom today since there is a TON
@@ -23,7 +23,7 @@ pub const UDP: usize = 17;
 pub const MAXVARINT_BUF: usize = 4;
 
 pub fn get_maxbuf() -> usize {
-    return MAXBUF.load(std::sync::atomic::Ordering::Relaxed);
+    MAXBUF.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 pub fn set_maxbuf(maxbuf: usize) {
@@ -209,25 +209,25 @@ pub fn varint_decode(bytes: &[u8]) -> (usize, usize) {
     let mut number: usize = 0;
     let mut hbytes = 0;
     for b in bytes {
-        number = number | (((b & 0x7f) as usize) << (7 * hbytes)) as usize;
-        hbytes = hbytes + 1;
+        number |= (((b & 0x7f) as usize) << (7 * hbytes)) as usize;
+        hbytes += 1;
         if (b & 0x80) == 0 {
             break;
         }
     }
-    return (hbytes, number);
+    (hbytes, number)
 }
 
 pub fn varint_encode_len(mut number: usize) -> usize {
     let mut hbytes = 0;
     loop {
         hbytes += 1;
-        number = number >> 7;
+        number >>= 7;
         if number == 0 {
             break;
         }
     }
-    return hbytes;
+    hbytes
 }
 
 pub fn varint_encode(mut number: usize, bytes: &mut [u8]) -> usize {
@@ -239,19 +239,19 @@ pub fn varint_encode(mut number: usize, bytes: &mut [u8]) -> usize {
             bytes[hbytes] = (number & 0x7F) as u8;
         }
         hbytes += 1;
-        number = number >> 7;
+        number >>= 7;
         if number == 0 {
             break;
         }
     }
-    return hbytes;
+    hbytes
 }
 
 pub fn as_u32_be(array: &[u8; 4]) -> u32 {
     ((array[0] as u32) << 24)
         | ((array[1] as u32) << 16)
         | ((array[2] as u32) << 8)
-        | ((array[3] as u32) << 0)
+        | (array[3] as u32)
 }
 
 pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
@@ -288,7 +288,7 @@ pub fn decode_ipv4(ip: &[u8]) -> Option<FlowV4Key> {
         }
     }
 
-    return Some(key);
+    Some(key)
 }
 
 pub fn key_to_hdr(key: &FlowV4Key, service: &str) -> NxtHdr {
@@ -299,17 +299,19 @@ pub fn key_to_hdr(key: &FlowV4Key, service: &str) -> NxtHdr {
         (key.sip & 0xFF) as u8,
     );
 
-    let mut flow: NxtFlow = NxtFlow::default();
-    flow.proto = key.proto as u32;
-    flow.dest = key.dip.to_owned();
-    flow.dest_svc = service.to_owned();
-    flow.dport = key.dport as u32;
-    flow.source = src.to_string();
-    flow.sport = key.sport as u32;
-    let mut hdr = NxtHdr::default();
-    hdr.hdr = Some(Hdr::Flow(flow));
-
-    return hdr;
+    let flow = nxthdr::NxtFlow {
+        proto: key.proto as u32,
+        dest: key.dip.to_owned(),
+        dest_svc: service.to_owned(),
+        dport: key.dport as u32,
+        source: src.to_string(),
+        sport: key.sport as u32,
+        ..Default::default()
+    };
+    nxthdr::NxtHdr {
+        hdr: Some(Hdr::Flow(flow)),
+        ..Default::default()
+    }
 }
 
 pub fn hdr_to_key(hdr: &NxtHdr) -> Option<FlowV4Key> {
@@ -324,23 +326,23 @@ pub fn hdr_to_key(hdr: &NxtHdr) -> Option<FlowV4Key> {
                 return None;
             }
             let sip = as_u32_be(&sipb.unwrap().octets());
-            return Some(FlowV4Key {
+            Some(FlowV4Key {
                 sip,
                 dip,
                 sport: flow.sport as u16,
                 dport: flow.dport as u16,
                 proto: flow.proto as usize,
-            });
+            })
         }
-        _ => return None,
+        _ => None,
     }
 }
 
 fn nlcrnl(v: &[u8]) -> bool {
-    if v[0] == '\n' as u8 && v[1] == '\r' as u8 && v[2] == '\n' as u8 {
+    if v[0] == b'\n' && v[1] == b'\r' && v[2] == b'\n' {
         return true;
     }
-    return false;
+    false
 }
 
 pub fn parse_crnl(buf: &[u8]) -> usize {
@@ -348,23 +350,17 @@ pub fn parse_crnl(buf: &[u8]) -> usize {
     // A brute force check here without maintaining any state, for every
     // set of three bytes, check if they are \n\r\n
     for i in 0..buf.len() {
-        if i >= 2 {
-            if nlcrnl(&buf[i - 2..i + 1]) {
-                return i + 1;
-            }
+        if i >= 2 && nlcrnl(&buf[i - 2..i + 1]) {
+            return i + 1;
         }
-        if i >= 1 && i + 1 < buf.len() {
-            if nlcrnl(&buf[i - 1..i + 2]) {
-                return i + 2;
-            }
+        if i >= 1 && i + 1 < buf.len() && nlcrnl(&buf[i - 1..i + 2]) {
+            return i + 2;
         }
-        if i + 2 < buf.len() {
-            if nlcrnl(&buf[i..i + 3]) {
-                return i + 3;
-            }
+        if i + 2 < buf.len() && nlcrnl(&buf[i..i + 3]) {
+            return i + 3;
         }
     }
-    return 0;
+    0
 }
 
 pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
@@ -393,7 +389,7 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
                         return ("".to_string(), 0, "".to_string());
                     }
                     let host = host.unwrap();
-                    match host.find(":") {
+                    match host.find(':') {
                         Some(o) => {
                             let dest = &host[0..o];
                             let port = &host[o + 1..];
@@ -410,7 +406,7 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
         }
         Err(_) => return ("".to_string(), 0, "".to_string()),
     }
-    return ("".to_string(), 0, "".to_string());
+    ("".to_string(), 0, "".to_string())
 }
 
 pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
@@ -421,11 +417,11 @@ pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
             unsafe {
                 b.set_len(capacity);
             }
-            return Some(b);
+            Some(b)
         }
         None => {
             error!("Pool get failed");
-            return None;
+            None
         }
     }
 }

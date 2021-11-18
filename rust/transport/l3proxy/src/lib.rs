@@ -147,27 +147,25 @@ impl<'a> common::Transport for Socket<'a> {
                         if self.endpoint.is_none() {
                             self.endpoint = Some(endpoint);
                         }
-                        return Ok((
+                        Ok((
                             0,
                             NxtBufs {
                                 hdr: None,
                                 bufs: vec![data],
                                 headroom: 0,
                             },
-                        ));
+                        ))
                     } else {
-                        return Err(NxtError {
+                        Err(NxtError {
                             code: EWOULDBLOCK,
                             detail: "".to_string(),
-                        });
+                        })
                     }
                 }
-                None => {
-                    return Err(NxtError {
-                        code: EWOULDBLOCK,
-                        detail: "".to_string(),
-                    });
-                }
+                None => Err(NxtError {
+                    code: EWOULDBLOCK,
+                    detail: "".to_string(),
+                }),
             }
         } else {
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
@@ -202,27 +200,25 @@ impl<'a> common::Transport for Socket<'a> {
                         unsafe {
                             data.set_len(len);
                         }
-                        return Ok((
+                        Ok((
                             0,
                             NxtBufs {
                                 hdr: None,
                                 bufs: vec![data],
                                 headroom: 0,
                             },
-                        ));
+                        ))
                     } else {
-                        return Err(NxtError {
+                        Err(NxtError {
                             code: EWOULDBLOCK,
                             detail: "".to_string(),
-                        });
+                        })
                     }
                 }
-                None => {
-                    return Err(NxtError {
-                        code: EWOULDBLOCK,
-                        detail: "".to_string(),
-                    });
-                }
+                None => Err(NxtError {
+                    code: EWOULDBLOCK,
+                    detail: "".to_string(),
+                }),
             }
         }
     }
@@ -390,7 +386,7 @@ impl<'a> common::Transport for Socket<'a> {
         // a buffer anyways. We will take it back if there was no data written to it. For udp
         // if there is a packet then there is data for sure.
         if tcp {
-            if rx.len() != 0 && !self.has_rxbuf {
+            if !rx.is_empty() && !self.has_rxbuf {
                 let mut sock = self.onesock.get::<TcpSocket>(self.handle);
                 match common::pool_get(self.tcp_pool.clone()) {
                     Some(b) => {
@@ -404,21 +400,19 @@ impl<'a> common::Transport for Socket<'a> {
                     }
                 };
             }
-        } else {
-            if rx.len() != 0 && !self.has_rxbuf {
-                let mut sock = self.onesock.get::<UdpSocket>(self.handle);
-                match common::pool_get(self.pkt_pool.clone()) {
-                    Some(b) => {
-                        let rbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], b);
-                        sock.set_rx_reusable(rbuf);
-                        self.has_rxbuf = true;
-                    }
-                    None => {
-                        // Well no point giving the socket packets if we can allocate buffer, drop all pkts
-                        rx.clear();
-                    }
-                };
-            }
+        } else if !rx.is_empty() && !self.has_rxbuf {
+            let mut sock = self.onesock.get::<UdpSocket>(self.handle);
+            match common::pool_get(self.pkt_pool.clone()) {
+                Some(b) => {
+                    let rbuf = UdpSocketBuffer::new(vec![UdpPacketMetadata::EMPTY], b);
+                    sock.set_rx_reusable(rbuf);
+                    self.has_rxbuf = true;
+                }
+                None => {
+                    // Well no point giving the socket packets if we can allocate buffer, drop all pkts
+                    rx.clear();
+                }
+            };
         }
 
         let pktq = PacketQ::new(
@@ -446,10 +440,8 @@ impl<'a> common::Transport for Socket<'a> {
             // Some packets are generated to be transmitted, if all of the tcp data has
             // been transmitted, reclaim the buffers
             let mut sock = self.onesock.get::<TcpSocket>(self.handle);
-            if self.has_txbuf {
-                if sock.send_take_reusable(false).is_some() {
-                    self.has_txbuf = false;
-                }
+            if self.has_txbuf && sock.send_take_reusable(false).is_some() {
+                self.has_txbuf = false;
             }
             if !sock.recv_has_data() {
                 // Maybe we just gave an ACK with no data, to the socket. The receive buffers
@@ -482,7 +474,7 @@ impl<'a> common::Transport for Socket<'a> {
                 self.has_txbuf = false;
                 return true;
             }
-            return !self.has_rxbuf && !self.has_txbuf;
+            !self.has_rxbuf && !self.has_txbuf
         } else {
             let mut sock = self.onesock.get::<UdpSocket>(self.handle);
             if force {
@@ -492,7 +484,7 @@ impl<'a> common::Transport for Socket<'a> {
                 self.has_txbuf = false;
                 return true;
             }
-            return !self.has_rxbuf && !self.has_txbuf;
+            !self.has_rxbuf && !self.has_txbuf
         }
     }
 
