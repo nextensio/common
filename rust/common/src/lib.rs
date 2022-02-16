@@ -4,7 +4,10 @@ use etherparse::TransportSlice::*;
 use log::error;
 use mio::{Poll, Token};
 use object_pool::{try_pull, Pool, Reusable};
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{atomic::AtomicUsize, Arc};
+use std::time::Duration;
+use std::time::Instant;
 use std::{collections::VecDeque, fmt, net::Ipv4Addr};
 
 pub mod nxthdr {
@@ -410,7 +413,7 @@ pub fn parse_host(buf: &[u8]) -> (String, usize, String) {
 }
 
 pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
-    match try_pull(pool) {
+    match try_pull(pool.clone()) {
         Some(mut b) => {
             b.clear();
             let capacity = b.capacity();
@@ -420,7 +423,12 @@ pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
             Some(b)
         }
         None => {
-            error!("Pool get failed");
+            pool.cnt_fail.fetch_add(1, Relaxed);
+            let mut last_fail = pool.last_fail.lock();
+            if Instant::now() > *last_fail + Duration::from_millis(5000) {
+                error!("Pool get failed");
+                *last_fail = Instant::now();
+            }
             None
         }
     }

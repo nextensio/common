@@ -303,7 +303,7 @@ dependencies = [
 [[package]]
 name = "object-pool"
 version = "0.5.4"
-source = "git+https://github.com/nextensio/object-pool.git?branch=nextensio-alpha#e73583d3965605f70dbc6db788d66e4733cb9459"
+source = "git+https://github.com/nextensio/object-pool.git?branch=nextensio-alpha#7d9f0ac60e457e9449e6be4b5edbab64bb2b3b5c"
 dependencies = [
  "parking_lot",
 ]
