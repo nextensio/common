@@ -426,7 +426,7 @@ pub fn pool_get(pool: Arc<Pool<Vec<u8>>>) -> Option<Reusable<Vec<u8>>> {
             pool.cnt_fail.fetch_add(1, Relaxed);
             let mut last_fail = pool.last_fail.lock();
             if Instant::now() > *last_fail + Duration::from_millis(5000) {
-                error!("Pool get failed");
+                error!("Pool get failed {}", pool.name);
                 *last_fail = Instant::now();
             }
             None
