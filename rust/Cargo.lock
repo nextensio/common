@@ -238,7 +238,7 @@ dependencies = [
 [[package]]
 name = "mio"
 version = "0.8.0"
-source = "git+https://github.com/nextensio/mio.git?branch=nextensio-alpha#5022bbffb325bb1b7a2ab0e0420109a6a86e86b5"
+source = "git+https://github.com/nextensio/mio.git?branch=nextensio-alpha#4421cfa206a7a69bbe667be9679005d300606976"
 dependencies = [
  "libc",
  "log",
