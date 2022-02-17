@@ -176,10 +176,7 @@ pub trait Transport {
     // This is an optional API to set the transport in non blocking mode and optionally
     // register it with an MIO poller
     fn event_register(&mut self, _: Token, _: &mut Poll, _: RegType) -> Result<(), NxtError> {
-        Err(NxtError {
-            code: NxtErr::CONNECTION,
-            detail: "unimplemented".to_string(),
-        })
+        Ok(())
     }
 
     // This is an optional implementation. This is meant for transports which have
