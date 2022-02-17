@@ -1,5 +1,5 @@
 use common::{NxtBufs, NxtErr::CONNECTION, NxtErr::EWOULDBLOCK, NxtError, RawStream, RegType};
-use mio::net::{TcpSocket, UdpSocket};
+use mio::net::{TcpStream, UdpSocket};
 use mio::{Interest, Poll, Token};
 use object_pool::Pool;
 use std::net::ToSocketAddrs;
@@ -68,9 +68,7 @@ impl common::Transport for NetConn {
         );
         let bind_ip = SocketAddr::new(IpAddr::V4(bip), 0);
         if self.proto == common::TCP {
-            let socket = TcpSocket::new_v4()?;
-            socket.bind(bind_ip)?;
-            let stream = socket.connect(addr)?;
+            let stream = TcpStream::connect_with_bind(addr, bind_ip)?;
             self.stream = Some(RawStream::Tcp(stream));
         } else {
             let socket = UdpSocket::bind(bind_ip)?;

@@ -237,9 +237,8 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.7.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8067b404fe97c70829f082dec8bcf4f71225d7eaea1d8645349cb76fa06205cc"
+version = "0.8.0"
+source = "git+https://github.com/nextensio/mio.git?branch=nextensio-alpha#5022bbffb325bb1b7a2ab0e0420109a6a86e86b5"
 dependencies = [
  "libc",
  "log",
