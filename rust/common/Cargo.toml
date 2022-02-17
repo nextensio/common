@@ -11,7 +11,7 @@ native-tls = "0.2"
 prost = "0.7"
 etherparse = "0.9.0"
 httparse = "1.3.5"
-mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
+mio = {version = "0.7.14", features = ["os-poll", "net", "os-util"]}
 
 [build-dependencies]
 prost-build = { version = "0.7" }

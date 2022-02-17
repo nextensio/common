@@ -7,5 +7,5 @@ edition = "2018"
 [dependencies]
 libc = {version = "0.2"}
 object-pool = { git = "https://github.com/nextensio/object-pool.git", branch = "nextensio-alpha" }
-mio = {version = "0.7", features = ["os-poll", "net", "os-util"]}
+mio = {version = "0.7.14", features = ["os-poll", "net", "os-util"]}
 common = { path = "../../common" }
