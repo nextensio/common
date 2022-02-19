@@ -95,6 +95,7 @@ impl common::Transport for NetConn {
                 _ => panic!("Unexpected stream type"),
             }
         }
+        self.closed = true;
         Ok(())
     }
 
