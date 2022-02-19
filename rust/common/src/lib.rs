@@ -209,7 +209,7 @@ pub trait Transport {
 
     // This is an optional implementation to see if the underlying transport is
     // read-write ready
-    fn can_recv_send(&mut self) -> bool {
+    fn may_recv_send(&mut self) -> bool {
         true
     }
 }
