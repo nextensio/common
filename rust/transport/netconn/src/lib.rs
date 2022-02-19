@@ -334,6 +334,9 @@ impl common::Transport for NetConn {
                 },
             }
         } else {
+            if let RegType::Dereg = register {
+                return Ok(());
+            }
             return Err(NxtError {
                 code: CONNECTION,
                 detail: "stream not found".to_string(),
