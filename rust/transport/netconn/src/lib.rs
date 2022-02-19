@@ -84,12 +84,16 @@ impl common::Transport for NetConn {
     }
 
     fn close(&mut self, _: u64) -> Result<(), NxtError> {
-        match self.stream.as_mut().unwrap() {
-            RawStream::Tcp(stream) => stream.shutdown(std::net::Shutdown::Both)?,
-            RawStream::Udp(_) => {
-                // The socket will be closed when the object itself goes out of contex(ie dropped)
+        // Note that the flow might not have done a dial() and might
+        // have been closed before that, so its normal to have self.stream as None
+        if let Some(s) = self.stream.as_mut() {
+            match s {
+                RawStream::Tcp(stream) => stream.shutdown(std::net::Shutdown::Both)?,
+                RawStream::Udp(_) => {
+                    // The socket will be closed when the object itself goes out of contex(ie dropped)
+                }
+                _ => panic!("Unexpected stream type"),
             }
-            _ => panic!("Unexpected stream type"),
         }
         Ok(())
     }
