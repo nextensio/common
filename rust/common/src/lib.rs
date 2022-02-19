@@ -202,7 +202,16 @@ pub trait Transport {
         true
     }
 
+    // This is an optional implementation to pause/un-pause the underlying transport from
+    // accepting more data to transmit (like tcp socket write). This pause/un-pause can be
+    // based on conditions like "is the nextensio tunnel choked" etc..
     fn write_ready(&mut self) {}
+
+    // This is an optional implementation to see if the underlying transport is
+    // read-write ready
+    fn can_recv_send(&mut self) -> bool {
+        true
+    }
 }
 
 pub fn varint_decode(bytes: &[u8]) -> (usize, usize) {

@@ -494,6 +494,15 @@ impl<'a> common::Transport for Socket<'a> {
             sock.reset_delayed_ack();
         }
     }
+
+    fn can_recv_send(&mut self) -> bool {
+        if self.proto == common::TCP {
+            let sock = self.onesock.get::<TcpSocket>(self.handle);
+            sock.may_recv() && sock.may_send()
+        } else {
+            true
+        }
+    }
 }
 
 mod packetq;
