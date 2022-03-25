@@ -92,6 +92,7 @@ type HttpStream struct {
 	clocksync     int
 	initTime      time.Time
 	parent        *HttpStream
+	http2Only     bool
 }
 
 type Timing struct {
@@ -100,17 +101,19 @@ type Timing struct {
 	Rtt        uint64    `json:"rtt"`
 }
 
-func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, pvtKey []byte, pubKey []byte, port int, totThreads *int32) *HttpStream {
+// if http2Only is true, we will panic on getting an http1.1 stream. If its false, we will handle both http2 and http1.1
+func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, pvtKey []byte, pubKey []byte, port int, totThreads *int32, http2Only bool) *HttpStream {
 	return &HttpStream{
 		ctx: ctx, lg: lg, pool: pool, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		addr:       ":" + strconv.Itoa(port),
 		totThreads: totThreads,
-		server:     true,
+		server:     true, http2Only: http2Only,
 	}
 }
 
 // requestHeader: These are the http headers that are sent from client to server when a new http2 stream is initiated
-func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, cacert []byte, serverName string, serverIP string, port int, requestHeader http.Header, totThreads *int32, keepalive int, clocksync int) *HttpStream {
+func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, cacert []byte, serverName string,
+	serverIP string, port int, requestHeader http.Header, totThreads *int32, keepalive int, clocksync int, http2Only bool) *HttpStream {
 	h := HttpStream{
 		ctx: ctx, lg: lg, pool: pool, caCert: cacert, serverName: serverName, serverIP: serverIP, port: port,
 		requestHeader: requestHeader,
@@ -121,6 +124,7 @@ func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, cacert 
 		keepalive:     keepalive,
 		clocksync:     clocksync,
 		initTime:      time.Now(),
+		http2Only:     http2Only,
 	}
 	h.txData = httpBody{h: &h, txChan: make(chan nxtData)}
 
@@ -345,7 +349,7 @@ func recvTiming(w http.ResponseWriter, r *http.Request) {
 }
 
 func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, r *http.Request) {
-	if r.ProtoMajor != 2 {
+	if h.http2Only && r.ProtoMajor != 2 {
 		panic("We are expecting http2 with prior knowledge")
 	}
 
@@ -362,7 +366,7 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	stream := &HttpStream{
 		ctx: h.ctx, lg: h.lg, pool: h.pool, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
-		totThreads: h.totThreads,
+		totThreads: h.totThreads, http2Only: h.http2Only,
 	}
 
 	session := r.Header.Get("x-nextensio-transport-sid")
@@ -790,6 +794,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		parent:        parent,
 		clocksync:     0, // Only the first stream (NewClient) does clocksync
 		keepalive:     0, // Only the first stream (NewClient) does keepalive
+		http2Only:     h.http2Only,
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
