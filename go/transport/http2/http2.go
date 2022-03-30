@@ -373,9 +373,15 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	if s, e := uuid.Parse(session); e == nil {
 		stream.sid = s
 	} else {
-		h.lg.Println("Session without sid", e, s)
-		http.Error(w, "Session without sid", http.StatusInternalServerError)
-		return
+		// When both end points are nextensio, we expect a x-nextensio-transport-sid to be set
+		// by the client initiating a stream to the server. The sid is basically the client
+		// indicating its "parent session" (like one identifying a user connected to gateway)
+		// and the streams are all associated with that "parent" (i.e user for example). But this
+		// lib can also be used in a case where the client is an agentless browser, i.e. client
+		// is not a nextensio endpoint. So in which case well there is no "parent" session, its just
+		// independent streams even though it might all be from the same user. So we just fill in
+		// a new uuid for each of those streams
+		stream.sid = uuid.New()
 	}
 
 	c <- common.NxtStream{Parent: stream.sid, Stream: stream, Http: &r.Header}
