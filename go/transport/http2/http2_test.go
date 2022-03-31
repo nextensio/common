@@ -79,7 +79,7 @@ func http2sockServer(ctx context.Context, encrypted bool, sChan chan common.NxtS
 		pvtKey, pubKey = getKeys()
 	}
 	lg := log.New(os.Stdout, "test", 0)
-	server := NewListener(ctx, lg, pool, pvtKey, pubKey, testPort, nil, true)
+	server := NewListener(ctx, lg, pool, pvtKey, pubKey, testPort, nil, true, true)
 	go server.Listen(sChan)
 	for {
 		select {
