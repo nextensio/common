@@ -214,7 +214,7 @@ func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Reques
 				}
 				return
 			}
-			totLen := n
+			totLen += n
 			nbufs = append(nbufs, (*buf).Buf[0:n])
 			nxtBufs = append(nxtBufs, buf)
 			if n == len((*buf).Buf) && err != io.EOF {
