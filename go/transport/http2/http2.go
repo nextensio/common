@@ -198,7 +198,7 @@ func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Reques
 		nxtBufs := make([]*common.NxtBuf, 0)
 		buf := common.GetBuf(stream.pool)
 
-		var totLen uint64 = 0
+		var totLen int = 0
 		// For a direct connection from a browser, there are no nextensio headers.
 		// The body is the http content. So no need to parse out special headers.
 		// Read the data into the current buffer and keep adding more buffers
