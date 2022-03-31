@@ -93,7 +93,7 @@ type HttpStream struct {
 	initTime      time.Time
 	parent        *HttpStream
 	http2Only     bool
-	nxtHttp       bool			// true if nextensio specific http
+	nxtHttp       bool // true if nextensio specific http
 }
 
 type Timing struct {
@@ -234,14 +234,13 @@ func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Reques
 		}
 
 		select {
-			case stream.rxData <- nxtData{hdr: nil, data: &retData}:
-			case <-stream.streamClosed:
-				atomic.AddInt32(&stream.listener.nthreads, -1)
-				if stream.totThreads != nil {
-					atomic.AddInt32(stream.totThreads, -1)
-				}
-				return
+		case stream.rxData <- nxtData{hdr: nil, data: &retData}:
+		case <-stream.streamClosed:
+			atomic.AddInt32(&stream.listener.nthreads, -1)
+			if stream.totThreads != nil {
+				atomic.AddInt32(stream.totThreads, -1)
 			}
+			return
 		}
 	}
 }
