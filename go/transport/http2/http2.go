@@ -93,6 +93,7 @@ type HttpStream struct {
 	initTime      time.Time
 	parent        *HttpStream
 	http2Only     bool
+	nxtHttp       bool			// true if nextensio specific http
 }
 
 type Timing struct {
@@ -102,12 +103,12 @@ type Timing struct {
 }
 
 // if http2Only is true, we will panic on getting an http1.1 stream. If its false, we will handle both http2 and http1.1
-func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, pvtKey []byte, pubKey []byte, port int, totThreads *int32, http2Only bool) *HttpStream {
+func NewListener(ctx context.Context, lg *log.Logger, pool common.NxtPool, pvtKey []byte, pubKey []byte, port int, totThreads *int32, http2Only bool, nxtHttp bool) *HttpStream {
 	return &HttpStream{
 		ctx: ctx, lg: lg, pool: pool, pvtKey: pvtKey, pubKey: pubKey, port: port,
 		addr:       ":" + strconv.Itoa(port),
 		totThreads: totThreads,
-		server:     true, http2Only: http2Only,
+		server:     true, http2Only: http2Only, nxtHttp: nxtHttp,
 	}
 }
 
@@ -125,6 +126,7 @@ func NewClient(ctx context.Context, lg *log.Logger, pool common.NxtPool, cacert 
 		clocksync:     clocksync,
 		initTime:      time.Now(),
 		http2Only:     http2Only,
+		nxtHttp:       true,
 	}
 	h.txData = httpBody{h: &h, txChan: make(chan nxtData)}
 
@@ -187,6 +189,67 @@ func setRtt(stream *HttpStream, rtt uint64) {
 	}
 }
 
+// Read the body of a HTTP request from a normal browser, ie., not a nextensio
+// agent. This is a standard http request body without any nextensio headers
+// embedded.
+func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
+	for {
+		nbufs := make([][]byte, 0)
+		nxtBufs := make([]*common.NxtBuf, 0)
+		buf := common.GetBuf(stream.pool)
+
+		var totLen uint64 = 0
+		// For a direct connection from a browser, there are no nextensio headers.
+		// The body is the http content. So no need to parse out special headers.
+		// Read the data into the current buffer and keep adding more buffers
+		// if the data wont fit in the current buffer.
+		for {
+			n, err := r.Body.Read((*buf).Buf[0:])
+			if err != nil && err != io.EOF {
+				// some error that is not end of file. Terminate.
+				stream.Close()
+				atomic.AddInt32(&stream.listener.nthreads, -1)
+				if stream.totThreads != nil {
+					atomic.AddInt32(stream.totThreads, -1)
+				}
+				return
+			}
+			totLen := n
+			nbufs = append(nbufs, (*buf).Buf[0:n])
+			nxtBufs = append(nxtBufs, buf)
+			if n == len((*buf).Buf) && err != io.EOF {
+				buf = common.GetBuf(stream.pool)
+			} else {
+				break
+			}
+		}
+
+		retBuf := net.Buffers{}
+		if totLen != 0 {
+			retBuf = append(retBuf, nbufs[0:]...)
+		}
+		retData := common.NxtBufs{
+			Slices: retBuf,
+			Bufs:   nxtBufs,
+		}
+
+		select {
+			case stream.rxData <- nxtData{hdr: nil, data: &retData}:
+			case <-stream.streamClosed:
+				atomic.AddInt32(&stream.listener.nthreads, -1)
+				if stream.totThreads != nil {
+					atomic.AddInt32(stream.totThreads, -1)
+				}
+				return
+			}
+		}
+	}
+}
+
+// Read the body of a http request body originating from a nextensio agent. The body consists of
+// a protobuf header plus the original http message. The protobuf header is preceded by a total
+// length and then a length of the protobuf header. These length values are used to extract the
+// protobuf header (there are multiple types) and the actual http frame.
 // The http2 stream remains open forever, as long as the nextensio flow corresponding to the stream
 // needs it to be open. And the nextensio flow keeps sending its data over this http2 stream chunked
 // and written into the body. That means, when we read from the request body below, we are NOT
@@ -366,22 +429,23 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	stream := &HttpStream{
 		ctx: h.ctx, lg: h.lg, pool: h.pool, rxData: rxData, server: true, serverBody: r.Body,
 		listener: h, streamClosed: make(chan struct{}),
-		totThreads: h.totThreads, http2Only: h.http2Only,
+		totThreads: h.totThreads, http2Only: h.http2Only, nxtHttp: h.nxtHttp,
 	}
 
-	session := r.Header.Get("x-nextensio-transport-sid")
-	if s, e := uuid.Parse(session); e == nil {
-		stream.sid = s
-	} else {
-		// When both end points are nextensio, we expect a x-nextensio-transport-sid to be set
-		// by the client initiating a stream to the server. The sid is basically the client
-		// indicating its "parent session" (like one identifying a user connected to gateway)
-		// and the streams are all associated with that "parent" (i.e user for example). But this
-		// lib can also be used in a case where the client is an agentless browser, i.e. client
-		// is not a nextensio endpoint. So in which case well there is no "parent" session, its just
-		// independent streams even though it might all be from the same user. So we just fill in
-		// a new uuid for each of those streams
-		stream.sid = uuid.New()
+	// When both end points are nextensio, we expect a x-nextensio-transport-sid to be set
+	// by the client initiating a stream to the server. The sid is basically the client
+	// indicating its "parent session" (like one identifying a user connected to gateway)
+	// and the streams are all associated with that "parent" (i.e user for example). But this
+	// lib can also be used in a case where the client is an agentless browser, i.e. client
+	// is not a nextensio endpoint. So in which case well there is no "parent" session, its just
+	// independent streams even though it might all be from the same user. So we just fill in
+	// a new uuid for each of those streams
+	stream.sid = uuid.New()
+	if h.nxtHttp {
+		session := r.Header.Get("x-nextensio-transport-sid")
+		if s, e := uuid.Parse(session); e == nil {
+			stream.sid = s
+		}
 	}
 
 	c <- common.NxtStream{Parent: stream.sid, Stream: stream, Http: &r.Header}
@@ -390,7 +454,14 @@ func httpHandler(h *HttpStream, c chan common.NxtStream, w http.ResponseWriter, 
 	if h.totThreads != nil {
 		atomic.AddInt32(h.totThreads, 1)
 	}
-	go bodyRead(stream, w, r)
+	if h.nxtHttp {
+		// Nextensio specific http. Body contains nextensio header in protobuf format
+		// with length info about header and body.
+		go bodyRead(stream, w, r)
+	} else {
+		// Standard http body, nothing special embedded in body
+		go bodyReadAgentLess(stream, w, r)
+	}
 	for {
 		select {
 		case <-stream.streamClosed:
@@ -801,6 +872,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 		clocksync:     0, // Only the first stream (NewClient) does clocksync
 		keepalive:     0, // Only the first stream (NewClient) does keepalive
 		http2Only:     h.http2Only,
+		nxtHttp:       h.nxtHttp,
 	}
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
