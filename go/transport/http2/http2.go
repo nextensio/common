@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -193,6 +194,7 @@ func setRtt(stream *HttpStream, rtt uint64) {
 // agent. This is a standard http request body without any nextensio headers
 // embedded.
 func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Request) {
+	headersAdded := false
 	for {
 		nbufs := make([][]byte, 0)
 		nxtBufs := make([]*common.NxtBuf, 0)
@@ -233,8 +235,96 @@ func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Reques
 			Bufs:   nxtBufs,
 		}
 
+		// NOTE ASHWIN: This will need change. Because customer can have URLs to many different
+		// dest ports like 8888 or 8080 etc.. So there are two possible approaches A or B
+		// A. Minion listens on each of those ports - we know what those ports are since we make
+		//    customer configure the service + port on controller, and even the istio ingress needs
+		//    that same thing under the "hosts: .." section. I am talking about the proper working
+		//    model of agentless here, not larry's waste of time portal nonsense (that I dont care about)
+		// B. Minion listens on ONE port always - like 8888 - and we make istio ingress gateway do a
+		//    port change such that whatever comes in, gets forwarded to minion on port 8888, and the
+		//    original dest port (say 8080) is saved in some http header that istio adds like
+		//    X-Nextensio-Orignal-Dport or something. I dont know if this is all do-able in istio and
+		//    how complex that is, if its too complex, option A is not too hard, we just need to get
+		//    the controller configs for what services customer has configured and listen on each
+		//    of those ports
+		host, port, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+			if r.TLS != nil {
+				port = "443"
+			} else {
+				port = "80"
+			}
+		}
+		p, _ := strconv.Atoi(port)
+		sip := ""
+		sport := ""
+		s := 0
+		fwd := r.Header.Get("X-Forwarded-For")
+		if fwd != "" {
+			// If we got an array... grab the first IP
+			ips := strings.Split(fwd, ", ")
+			if len(ips) > 1 {
+				fwd = ips[0]
+			}
+			var e error
+			sip, sport, e = net.SplitHostPort(fwd)
+			if e == nil {
+				s, _ = strconv.Atoi(sport)
+			} else {
+				sip = fwd
+				s = 0
+			}
+		} else {
+			var e error
+			sip, sport, e = net.SplitHostPort(r.RemoteAddr)
+			if e == nil {
+				s, _ = strconv.Atoi(sport)
+			} else {
+				sip = r.RemoteAddr
+				s = 0
+			}
+		}
+
+		flow := nxthdr.NxtFlow{}
+		flow.Source = sip
+		flow.Sport = uint32(s)
+		flow.Dest = host
+		flow.Dport = uint32(p)
+		flow.DestSvc = flow.Dest
+		flow.Type = nxthdr.NxtFlow_L4
+		flow.Proto = common.HTTP
+		keys := []string{}
+		values := []string{}
+		// Http headers just need to be added one time so that the connector
+		// on getting the first flow header will have these headers to open an
+		// http request to the flow.Dest
+		if !headersAdded {
+			for _, h := range r.Header {
+				for _, h1 := range h {
+					keys = append(keys, h1)
+					values = append(values, r.Header.Get(h1))
+				}
+			}
+			flow.HttpKeys = keys
+			flow.HttpValues = values
+		}
+		hdr := nxthdr.NxtHdr{}
+		hdr.Hdr = &nxthdr.NxtHdr_Flow{Flow: &flow}
+
+		// NOTE ASHWIN: So here the minion code will get the NxtHdr hdr, and then you dont have
+		// to worry about anything till the packet hits the connector, the encoding/decoding all
+		// happens like how the usual protobuf encoding/decoding happens.
+		// Once the flow hits the connector, when you create the flow for the very first time,
+		// if you see that flow.Proto == common.HTTP, then you open the http2.NewClient() with
+		// the requestHeader parameter as the flow.HttpKeys + flow.HttpValues, thats about it.
+		// So note that you will be using this module as an http "client" on connector, so the
+		// readData() API will come into play for sending data client to server, and the readData()
+		// API does protobuf encoding today, so you might have to create a readDataAgentless()
+		// without any protobuf stuff.
 		select {
-		case stream.rxData <- nxtData{hdr: nil, data: &retData}:
+		case stream.rxData <- nxtData{hdr: &hdr, data: &retData}:
 		case <-stream.streamClosed:
 			atomic.AddInt32(&stream.listener.nthreads, -1)
 			if stream.totThreads != nil {

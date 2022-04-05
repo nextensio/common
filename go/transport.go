@@ -16,6 +16,7 @@ const (
 	TCP  = 6
 	UDP  = 17
 	ICMP = 1
+	HTTP = 0
 )
 
 const (

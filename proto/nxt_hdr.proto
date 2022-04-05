@@ -134,6 +134,8 @@ message NxtFlow {
   string traceCtx = 16;
   string traceRequestId = 17;
   uint64 processingDuration = 18;
+  repeated string httpKeys = 19;
+  repeated string httpValues = 20;
 }
 
 message NxtKeepalive {}
