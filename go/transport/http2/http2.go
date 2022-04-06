@@ -730,7 +730,19 @@ func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
 	return nil
 }
 
+func (b *httpBody) readDataAgentLess(data nxtData) error {
+	newbuf := append(net.Buffers{}, data.data.Slices...)
+	b.bufs = &common.NxtBufs{Slices: newbuf, Bufs: data.data.Bufs}
+	b.idx = 0
+	b.off = 0
+
+	return nil
+}
+
 func (b *httpBody) readData(data nxtData) error {
+	if data.hdr == nil {
+		return b.readDataAgentLess(data)
+	}
 	total := 0
 	for _, b := range data.data.Slices {
 		total += len(b)
