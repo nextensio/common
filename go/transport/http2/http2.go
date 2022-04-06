@@ -301,11 +301,9 @@ func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Reques
 		// on getting the first flow header will have these headers to open an
 		// http request to the flow.Dest
 		if !headersAdded {
-			for _, h := range r.Header {
-				for _, h1 := range h {
-					keys = append(keys, h1)
-					values = append(values, r.Header.Get(h1))
-				}
+			for k, _ := range r.Header {
+				keys = append(keys, k)
+				values = append(values, r.Header.Get(k))
 			}
 			flow.HttpKeys = keys
 			flow.HttpValues = values
