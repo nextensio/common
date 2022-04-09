@@ -60,9 +60,10 @@ type TimeInfo struct {
 // with just streams. So the "Parent" uuid just tells us that "all these sessions are associated"
 // with the same Parent session xyz
 type NxtStream struct {
-	Parent uuid.UUID
-	Stream Transport
-	Http   *http.Header
+	Parent  uuid.UUID
+	Stream  Transport
+	Http    *http.Header
+	Request *http.Request
 }
 
 // A nextensio transport consists of "sessions" and "streams". Think of a session to be

@@ -684,10 +684,15 @@ func periodicTiming(h *HttpStream) {
 // from server to client as of today. The sChan is only useful in notifying
 // client about new streams initiated from server
 func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
-	req, err := http.NewRequest("POST", h.addr, &h.txData)
+	method := "POST"
+	if sChan.Request != nil && sChan.Request.Method != "" {
+		method = sChan.Request.Method
+	}
+	req, err := http.NewRequest(method, h.addr, &h.txData)
 	if err != nil {
 		return common.Err(common.CONNECTION_ERR, err)
 	}
+	sChan.Request = req
 	if h.requestHeader != nil {
 		for key, val := range h.requestHeader {
 			for _, v := range val {
