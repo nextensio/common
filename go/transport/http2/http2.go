@@ -295,6 +295,10 @@ func bodyReadAgentLess(stream *HttpStream, w http.ResponseWriter, r *http.Reques
 		flow.DestSvc = flow.Dest
 		flow.Type = nxthdr.NxtFlow_L4
 		flow.Proto = common.HTTP
+		flow.HttpHost = host
+		flow.HttpMethod = r.Method
+		flow.HttpProtoMajor = uint32(r.ProtoMajor)
+		flow.HttpProtoMinor = uint32(r.ProtoMinor)
 		keys := []string{}
 		values := []string{}
 		// Http headers just need to be added one time so that the connector
