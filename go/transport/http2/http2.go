@@ -985,6 +985,9 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
 	nh.client = h.client
+	req := &http.Request{Method: "POST"}
+	as := common.NxtStream{Request: req}
+	h.sChan <- as
 	if nh.Dial(h.sChan) != nil {
 		return nil
 	}
