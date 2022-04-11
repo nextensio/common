@@ -78,7 +78,7 @@ type HttpStream struct {
 	serverBody    io.ReadCloser
 	rxData        chan nxtData
 	txData        httpBody
-	sChan         chan common.NxtStream // unused
+	sChan         common.NxtStream // unused
 	nthreads      int32
 	totThreads    *int32
 	listener      *HttpStream
@@ -683,11 +683,10 @@ func periodicTiming(h *HttpStream) {
 // NOTE: sChan is not used here because http2 lib we have cannot create streams
 // from server to client as of today. The sChan is only useful in notifying
 // client about new streams initiated from server
-func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
+func (h *HttpStream) Dial(sChan common.NxtStream) *common.NxtError {
 	method := "POST"
-	sc := <-sChan
-	if sc.Request != nil && sc.Request.Method != "" {
-		method = sc.Request.Method
+	if sChan.Request != nil && sChan.Request.Method != "" {
+		method = sChan.Request.Method
 	}
 	req, err := http.NewRequest(method, h.addr, &h.txData)
 	if err != nil {
@@ -986,9 +985,8 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 	nh.addr = h.addr
 	nh.client = h.client
 	req := &http.Request{Method: "POST"}
-	as := common.NxtStream{Request: req}
-	h.sChan <- as
-	if nh.Dial(h.sChan) != nil {
+	schan := common.NxtStream{Request: req}
+	if nh.Dial(schan) != nil {
 		return nil
 	}
 	return &nh
