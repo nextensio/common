@@ -792,7 +792,7 @@ func (h *WebStream) Listen(c chan common.NxtStream) {
 	}
 }
 
-func (h *WebStream) Dial(sChan chan common.NxtStream) *common.NxtError {
+func (h *WebStream) Dial(sChan chan common.NxtStream, method string) *common.NxtError {
 
 	var tlsConf *tls.Config
 

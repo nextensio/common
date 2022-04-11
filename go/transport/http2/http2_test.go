@@ -110,7 +110,7 @@ func dialHttp2sock(ctx context.Context, encrypted bool, serverName string, serve
 	hdrs := make(http.Header)
 	lg := log.New(os.Stdout, "test", 0)
 	sock := NewClient(ctx, lg, pool, cert, serverName, serverIP, port, hdrs, nil, 0, clocksync, true)
-	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
+	for err := sock.Dial(cChan, ""); err != nil; err = sock.Dial(cChan, "") {
 		sock.Close()
 		retry++
 		if retry >= 5 {

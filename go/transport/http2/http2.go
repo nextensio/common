@@ -683,8 +683,11 @@ func periodicTiming(h *HttpStream) {
 // NOTE: sChan is not used here because http2 lib we have cannot create streams
 // from server to client as of today. The sChan is only useful in notifying
 // client about new streams initiated from server
-func (h *HttpStream) Dial(sChan chan common.NxtStream) *common.NxtError {
-	req, err := http.NewRequest("POST", h.addr, &h.txData)
+func (h *HttpStream) Dial(sChan chan common.NxtStream, method string) *common.NxtError {
+	if method == "" {
+		method = "POST"
+	}
+	req, err := http.NewRequest(method, h.addr, &h.txData)
 	if err != nil {
 		return common.Err(common.CONNECTION_ERR, err)
 	}
@@ -980,7 +983,7 @@ func (h *HttpStream) NewStream(hdr http.Header) common.Transport {
 	nh.txData = httpBody{h: &nh, txChan: make(chan nxtData)}
 	nh.addr = h.addr
 	nh.client = h.client
-	if nh.Dial(h.sChan) != nil {
+	if nh.Dial(h.sChan, "") != nil {
 		return nil
 	}
 	return &nh

@@ -109,7 +109,7 @@ func dialWebsock(ctx context.Context, serverName string, serverIP string, port i
 	httpHdr.Add("x-nextensio-connect", "cpod-1")
 	httpHdr.Add("x-nextensio-agent", "foobar")
 	sock := NewClient(ctx, lg, pool, cert, serverName, serverIP, port, nil, 0)
-	for err := sock.Dial(cChan); err != nil; err = sock.Dial(cChan) {
+	for err := sock.Dial(cChan, ""); err != nil; err = sock.Dial(cChan, "") {
 		sock.Close()
 		retry++
 		if retry >= 5 {

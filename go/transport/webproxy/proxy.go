@@ -118,7 +118,7 @@ func (p *Proxy) Listen(c chan common.NxtStream) {
 	server.ListenAndServe()
 }
 
-func (p *Proxy) Dial(sChan chan common.NxtStream) *common.NxtError {
+func (p *Proxy) Dial(sChan chan common.NxtStream, method string) *common.NxtError {
 	panic("proxy is accept-only, no dial support")
 }
 

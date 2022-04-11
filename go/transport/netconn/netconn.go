@@ -274,7 +274,7 @@ func (n *NetConn) Listen(c chan common.NxtStream) {
 	}
 }
 
-func (n *NetConn) Dial(sChan chan common.NxtStream) *common.NxtError {
+func (n *NetConn) Dial(sChan chan common.NxtStream, method string) *common.NxtError {
 	addr := fmt.Sprintf("%s:%d", n.dest, n.port)
 	var e error
 	n.conn, e = net.Dial(n.proto, addr)

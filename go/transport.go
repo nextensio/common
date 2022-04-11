@@ -100,7 +100,7 @@ type Transport interface {
 	// The call to Dial() will block and return a stream from client to server once its available.
 	// Dial() will also spawn a goroutine for accepting streams initiated by server to client,
 	// and will write those streams to the channel
-	Dial(chan NxtStream) *NxtError
+	Dial(chan NxtStream, method string) *NxtError
 
 	// If this is a multiplexed transport, NewStream will create a "stream" that gets multiplexed
 	// over the same "session" - the concept of streams and sessions is the same as in QUIC or GRPC
