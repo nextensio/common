@@ -60,10 +60,9 @@ type TimeInfo struct {
 // with just streams. So the "Parent" uuid just tells us that "all these sessions are associated"
 // with the same Parent session xyz
 type NxtStream struct {
-	Parent  uuid.UUID
-	Stream  Transport
-	Http    *http.Header
-	Request *http.Request
+	Parent uuid.UUID
+	Stream Transport
+	Http   *http.Header
 }
 
 // A nextensio transport consists of "sessions" and "streams". Think of a session to be
@@ -101,7 +100,7 @@ type Transport interface {
 	// The call to Dial() will block and return a stream from client to server once its available.
 	// Dial() will also spawn a goroutine for accepting streams initiated by server to client,
 	// and will write those streams to the channel
-	Dial(NxtStream) *NxtError
+	Dial(chan NxtStream) *NxtError
 
 	// If this is a multiplexed transport, NewStream will create a "stream" that gets multiplexed
 	// over the same "session" - the concept of streams and sessions is the same as in QUIC or GRPC
